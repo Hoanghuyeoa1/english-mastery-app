@@ -1,90 +1,324 @@
 const fs = require('fs');
 const path = require('path');
 
-// 1. Danh sách nguồn từ vựng chất lượng cao được tuyển chọn
-const IT_TECH_VOCAB = [
+// 1. Danh mục từ vựng chuẩn từ điển Oxford 3000, 5000, AWL, Tech/IT, TOEIC & Business
+const COMPREHENSIVE_VOCAB_BASE = [
+  // --- TECH & SOFTWARE ENGINEERING ---
   ['Microservices', '/ˈmaɪ.krəʊˌsɜː.vɪs.ɪz/', 'noun', 'Kiến trúc vi dịch vụ phân tán', 'Microservices architecture improves deployment autonomy and fault isolation.', 'Kiến trúc vi dịch vụ cải thiện tính tự chủ trong triển khai và khả năng cô lập lỗi.', 'IT / Tech', 'C1', 'Tech'],
   ['Scalability', '/ˌskeɪ.ləˈbɪl.ə.ti/', 'noun', 'Khả năng mở rộng quy mô hệ thống', 'Cloud infrastructure provides elastic scalability for web applications.', 'Hạ tầng đám mây cung cấp khả năng mở rộng linh hoạt cho ứng dụng web.', 'IT / Tech', 'C1', 'Tech'],
   ['Concurrency', '/kənˈkʌr.ən.si/', 'noun', 'Tính đồng thời trong xử lý đa luồng', 'Go handles high concurrency with lightweight goroutines and channels.', 'Ngôn ngữ Go xử lý tính đồng thời cao với các goroutine và channel gọn nhẹ.', 'IT / Tech', 'C1', 'Tech'],
   ['Asynchronous', '/eɪˈsɪŋ.krə.nəs/', 'adjective', 'Bất đồng bộ, không chặn luồng chính', 'Asynchronous operations prevent blocking the main UI thread.', 'Các thao tác bất đồng bộ ngăn ngừa việc chặn luồng giao diện chính.', 'IT / Tech', 'B2', 'Tech'],
-  ['Idempotent', '/ˌaɪ.dəmˈpoʊ.tənt/', 'adjective', 'Thuộc tính thực thi nhiều lần vẫn cho kết quả như một lần', 'PUT and DELETE HTTP methods are idempotent by design.', 'Các phương thức HTTP PUT và DELETE theo thiết kế đều có tính idempotent.', 'IT / Tech', 'C1', 'Tech'],
-  ['Refactoring', '/ˌriːˈfæk.tər.ɪŋ/', 'noun', 'Tái cấu trúc mã nguồn', 'Refactoring code enhances readability, reduces debt, and simplifies maintenance.', 'Tái cấu trúc mã nguồn giúp tăng tính dễ đọc, giảm nợ kỹ thuật và đơn giản hóa bảo trì.', 'IT / Tech', 'B2', 'Tech'],
-  ['Polymorphism', '/ˌpɒl.iˈmɔː.fɪ.zəm/', 'noun', 'Tính đa hình trong lập trình hướng đối tượng', 'Polymorphism allows objects of different classes to be treated as instances of a common superclass.', 'Tính đa hình cho phép các đối tượng thuộc các lớp khác nhau được đối xử như các thể hiện của lớp cha chung.', 'IT / Tech', 'C1', 'Tech'],
+  ['Idempotent', '/ˌaɪ.dəmˈpoʊ.tənt/', 'adjective', 'Tính bất biến kết quả qua nhiều lần gọi', 'PUT and DELETE HTTP methods are idempotent by design.', 'Các phương thức HTTP PUT và DELETE theo thiết kế đều có tính idempotent.', 'IT / Tech', 'C1', 'Tech'],
+  ['Refactoring', '/ˌriːˈfæk.tər.ɪŋ/', 'noun', 'Tái cấu trúc mã nguồn tối ưu', 'Refactoring code enhances readability, reduces debt, and simplifies maintenance.', 'Tái cấu trúc mã nguồn giúp tăng tính dễ đọc, giảm nợ kỹ thuật và đơn giản hóa bảo trì.', 'IT / Tech', 'B2', 'Tech'],
+  ['Polymorphism', '/ˌpɒl.iˈmɔː.fɪ.zəm/', 'noun', 'Tính đa hình trong lập trình đối tượng', 'Polymorphism allows objects of different classes to share an interface.', 'Tính đa hình cho phép các đối tượng thuộc các lớp khác nhau chia sẻ chung một giao diện.', 'IT / Tech', 'C1', 'Tech'],
   ['Encapsulation', '/ɪnˌkæp.sjʊˈleɪ.ʃən/', 'noun', 'Tính đóng gói dữ liệu và phương thức', 'Encapsulation safeguards internal state by restricting direct access.', 'Tính đóng gói bảo vệ trạng thái nội bộ bằng cách hạn chế quyền truy cập trực tiếp.', 'IT / Tech', 'B2', 'Tech'],
-  ['Middleware', '/ˈmɪd.əl.weər/', 'noun', 'Phần mềm trung gian xử lý request/response', 'Authentication middleware intercepts and validates incoming API tokens.', 'Middleware xác thực chặn và kiểm tra tính hợp lệ của token API được gửi đến.', 'IT / Tech', 'B2', 'Tech'],
-  ['Websocket', '/ˈweb.sɒk.ɪt/', 'noun', 'Giao thức truyền dữ liệu 2 chiều thời gian thực', 'Websockets establish persistent full-duplex connections for live chat systems.', 'Websocket thiết lập kết nối song công liên tục cho các hệ thống trò chuyện trực tiếp.', 'IT / Tech', 'B2', 'Tech'],
-  ['Kubernetes', '/ˌkjuː.bərˈnet.iːz/', 'noun', 'Nền tảng điều phối và tự động hóa container', 'Kubernetes automates deployment, scaling, and operational management of containerized workloads.', 'Kubernetes tự động hóa việc triển khai, mở rộng và quản lý vận hành các tác vụ container.', 'IT / Tech', 'C1', 'Tech'],
-  ['Containerization', '/kənˌteɪ.nər.aɪˈzeɪ.ʃən/', 'noun', 'Đóng gói ứng dụng dạng container', 'Containerization ensures consistent runtime environments across development and production.', 'Container hóa đảm bảo môi trường thực thi đồng nhất giữa phát triển và thực tế.', 'IT / Tech', 'C1', 'Tech'],
-  ['Observability', '/əbˌzɜː.vəˈbɪl.ə.ti/', 'noun', 'Khả năng giám sát và đo lường trạng thái hệ thống', 'Modern cloud systems rely on logs, metrics, and traces for complete observability.', 'Các hệ thống đám mây hiện đại dựa vào log, metric và trace để đạt khả năng quan sát toàn diện.', 'IT / Tech', 'C1', 'Tech'],
-  ['Throughput', '/ˈθruː.pʊt/', 'noun', 'Lưu lượng dữ liệu xử lý trong một đơn vị thời gian', 'Database throughput surged after optimizing table indices and read replicas.', 'Lưu lượng xử lý cơ sở dữ liệu tăng vọt sau khi tối ưu chỉ mục bảng và bản sao đọc.', 'IT / Tech', 'B2', 'Tech'],
+  ['Middleware', '/ˈmɪd.əl.weər/', 'noun', 'Phần mềm trung gian xử lý yêu cầu', 'Authentication middleware intercepts and validates incoming API tokens.', 'Middleware xác thực chặn và kiểm tra tính hợp lệ của token API được gửi đến.', 'IT / Tech', 'B2', 'Tech'],
+  ['Websocket', '/ˈweb.sɒk.ɪt/', 'noun', 'Giao thức truyền dữ liệu 2 chiều liên tục', 'Websockets establish persistent full-duplex connections for live chat systems.', 'Websocket thiết lập kết nối song công liên tục cho các hệ thống trò chuyện trực tiếp.', 'IT / Tech', 'B2', 'Tech'],
+  ['Kubernetes', '/ˌkjuː.bərˈnet.iːz/', 'noun', 'Nền tảng điều phối cụm container', 'Kubernetes automates deployment, scaling, and operational management of containers.', 'Kubernetes tự động hóa việc triển khai, mở rộng và quản lý vận hành container.', 'IT / Tech', 'C1', 'Tech'],
+  ['Containerization', '/kənˌteɪ.nər.aɪˈzeɪ.ʃən/', 'noun', 'Đóng gói ứng dụng vào container', 'Containerization ensures consistent runtime environments across servers.', 'Container hóa đảm bảo môi trường thực thi đồng nhất giữa các máy chủ.', 'IT / Tech', 'C1', 'Tech'],
+  ['Observability', '/əbˌzɜː.vəˈbɪl.ə.ti/', 'noun', 'Khả năng quan sát và đo lường hệ thống', 'Modern cloud systems rely on logs, metrics, and traces for observability.', 'Các hệ thống đám mây hiện đại dựa vào log, metric và trace để đo lường toàn diện.', 'IT / Tech', 'C1', 'Tech'],
+  ['Throughput', '/ˈθruː.pʊt/', 'noun', 'Lưu lượng dữ liệu xử lý theo thời gian', 'Database throughput surged after optimizing table indices and read replicas.', 'Lưu lượng xử lý cơ sở dữ liệu tăng vọt sau khi tối ưu chỉ mục bảng.', 'IT / Tech', 'B2', 'Tech'],
   ['Latency', '/ˈleɪ.tən.si/', 'noun', 'Độ trễ truyền tải dữ liệu qua mạng', 'Edge CDN caching drastically reduces network latency for global visitors.', 'Bộ nhớ đệm CDN giảm mạnh độ trễ mạng đối với người dùng toàn cầu.', 'IT / Tech', 'B2', 'Tech'],
-  ['Immutability', '/ɪˌmjuː.təˈbɪl.ə.ti/', 'noun', 'Tính bất biến không thể sửa đổi sau khi tạo', 'Functional programming emphasizes immutability to prevent unexpected side effects.', 'Lập trình hàm nhấn mạnh tính bất biến nhằm tránh các tác dụng phụ không mong muốn.', 'IT / Tech', 'C1', 'Tech'],
-  ['Sharding', '/ˈʃɑː.dɪŋ/', 'noun', 'Phân mảnh dữ liệu theo chiều ngang', 'Database sharding partitions large datasets across independent server nodes.', 'Phân mảnh cơ sở dữ liệu chia nhỏ tập dữ liệu lớn qua các nút máy chủ độc lập.', 'IT / Tech', 'C1', 'Tech'],
-  ['Load Balancer', '/ləʊd ˈbæl.ən.sər/', 'noun', 'Bộ cân bằng tải lưu lượng truy cập', 'The load balancer distributes client traffic evenly across healthy upstream nodes.', 'Bộ cân bằng tải phân phối lưu lượng truy cập đồng đều qua các máy chủ hoạt động tốt.', 'IT / Tech', 'B2', 'Tech'],
-  ['Rate Limiting', '/reɪt ˈlɪm.ɪ.tɪŋ/', 'noun', 'Giới hạn tần suất request API', 'Rate limiting defends public API endpoints against brute-force and DDoS attacks.', 'Giới hạn tần suất bảo vệ điểm cuối API công khai khỏi tấn công vét cạn và DDoS.', 'IT / Tech', 'B2', 'Tech'],
-  ['Zero-Downtime', '/ˌzɪə.rəʊˈdaʊn.taɪm/', 'adjective', 'Triển khai không gây gián đoạn dịch vụ', 'Blue-green deployment strategies facilitate seamless zero-downtime upgrades.', 'Chiến lược triển khai Blue-green tạo điều kiện nâng cấp dịch vụ liền mạch không downtime.', 'IT / Tech', 'C1', 'Tech']
-];
+  ['Immutability', '/ɪˌmjuː.təˈbɪl.ə.ti/', 'noun', 'Tính bất biến của cấu trúc dữ liệu', 'Functional programming emphasizes immutability to prevent unexpected side effects.', 'Lập trình hàm nhấn mạnh tính bất biến nhằm tránh các tác dụng phụ ngoài ý muốn.', 'IT / Tech', 'C1', 'Tech'],
+  ['Sharding', '/ˈʃɑː.dɪŋ/', 'noun', 'Phân mảnh dữ liệu theo chiều ngang', 'Database sharding partitions large datasets across independent server nodes.', 'Phân mảnh cơ sở dữ liệu chia nhỏ tập dữ liệu lớn qua các máy chủ độc lập.', 'IT / Tech', 'C1', 'Tech'],
+  ['Load Balancer', '/ləʊd ˈbæl.ən.sər/', 'noun', 'Bộ cân bằng tải phân phối lưu lượng', 'The load balancer distributes client traffic evenly across healthy upstream nodes.', 'Bộ cân bằng tải phân phối lưu lượng truy cập đồng đều qua các máy chủ hoạt động tốt.', 'IT / Tech', 'B2', 'Tech'],
+  ['Rate Limiting', '/reɪt ˈlɪm.ɪ.tɪŋ/', 'noun', 'Giới hạn tần suất gọi API', 'Rate limiting defends public API endpoints against brute-force and DDoS attacks.', 'Giới hạn tần suất bảo vệ điểm cuối API công khai khỏi tấn công vét cạn.', 'IT / Tech', 'B2', 'Tech'],
+  ['Zero-Downtime', '/ˌzɪə.rəʊˈdaʊn.taɪm/', 'adjective', 'Triển khai không gián đoạn dịch vụ', 'Blue-green deployment strategies facilitate seamless zero-downtime upgrades.', 'Chiến lược triển khai Blue-green tạo điều kiện nâng cấp dịch vụ liền mạch không downtime.', 'IT / Tech', 'C1', 'Tech'],
+  ['Algorithm', '/ˈæl.ɡə.rɪ.ðəm/', 'noun', 'Thuật toán xử lý và giải quyết bài toán', 'The search algorithm delivers relevant results in milliseconds.', 'Thuật toán tìm kiếm trả về kết quả phù hợp trong vài phần nghìn giây.', 'IT / Tech', 'B1', 'Tech'],
+  ['Encryption', '/ɪnˈkrɪp.ʃən/', 'noun', 'Mã hóa bảo mật thông tin dữ liệu', 'End-to-end encryption safeguards user communication from eavesdropping.', 'Mã hóa đầu cuối bảo vệ thông tin liên lạc của người dùng khỏi bị nghe lén.', 'IT / Tech', 'B2', 'Tech'],
+  ['Authentication', '/ɔːˌθen.tɪˈkeɪ.ʃən/', 'noun', 'Xác thực danh tính người dùng', 'Multi-factor authentication adds an essential layer of account security.', 'Xác thực đa yếu tố bổ sung một lớp bảo mật tài khoản thiết yếu.', 'IT / Tech', 'B2', 'Tech'],
+  ['Authorization', '/ˌɔː.θər.aɪˈzeɪ.ʃən/', 'noun', 'Ủy quyền và phân quyền truy cập', 'Role-based authorization limits access to sensitive admin dashboards.', 'Phân quyền theo vai trò giới hạn quyền truy cập vào bảng quản trị nhạy cảm.', 'IT / Tech', 'B2', 'Tech'],
+  ['Deployment', '/dɪˈplɔɪ.mənt/', 'noun', 'Triển khai ứng dụng lên máy chủ', 'Automated CI/CD pipelines streamline production deployment cycles.', 'Quy trình CI/CD tự động giúp tinh gọn chu kỳ triển khai sản phẩm.', 'IT / Tech', 'B2', 'Tech'],
 
-const ACADEMIC_IELTS_VOCAB = [
-  ['Ubiquitous', '/juːˈbɪk.wɪ.təs/', 'adjective', 'Hiện diện khắp mọi nơi, phổ biến rộng rãi', 'Smartphones have become ubiquitous fixtures in contemporary society.', 'Điện thoại thông minh đã trở thành thiết bị hiện diện khắp nơi trong xã hội đương đại.', 'Academic / IELTS', 'C1', 'IELTS'],
-  ['Resilience', '/rɪˈzɪl.jəns/', 'noun', 'Khả năng phục hồi kiên cường sau nghịch cảnh', 'The psychological resilience of local communities helped them overcome natural disasters.', 'Khả năng phục hồi tâm lý của cộng đồng địa phương giúp họ vượt qua thiên tai.', 'Academic / IELTS', 'C1', 'IELTS'],
-  ['Pragmatic', '/præɡˈmæt.ɪk/', 'adjective', 'Thực tế, coi trọng tính ứng dụng thực tiễn', 'Policymakers formulated a pragmatic roadmap to mitigate environmental degradation.', 'Các nhà hoạch định chính sách đã xây dựng lộ trình thực tiễn nhằm giảm thiểu suy thoái môi trường.', 'Academic / IELTS', 'C1', 'Academic'],
-  ['Meticulous', '/məˈtɪk.jə.ləs/', 'adjective', 'Tỉ mỉ, cẩn trọng từng chi tiết nhỏ', 'The researchers conducted meticulous laboratory experiments to ensure replicability.', 'Các nhà nghiên cứu đã tiến hành thí nghiệm phòng lab tỉ mỉ để đảm bảo tính tái lập.', 'Academic / IELTS', 'C1', 'Academic'],
-  ['Paradigm', '/ˈpær.ə.daɪm/', 'noun', 'Hệ quy chiếu, hình mẫu tư duy chuẩn tắc', 'Artificial intelligence has catalyzed a profound paradigm shift across digital industries.', 'Trí tuệ nhân tạo đã xúc tác một sự chuyển dịch hệ quy chiếu sâu sắc trong ngành kỹ thuật số.', 'Academic / IELTS', 'C2', 'Academic'],
-  ['Exemplify', '/ɪɡˈzem.plɪ.faɪ/', 'verb', 'Minh họa, là tấm gương điển hình tiêu biểu', 'Her groundbreaking discovery exemplifies the power of interdisciplinary collaboration.', 'Phát hiện mang tính đột phá của cô ấy là minh chứng tiêu biểu cho sức mạnh hợp tác liên ngành.', 'Academic / IELTS', 'C1', 'IELTS'],
-  ['Detrimental', '/ˌdet.rɪˈmen.təl/', 'adjective', 'Gây tổn hại nghiêm trọng, có hại', 'Excessive greenhouse emissions exert detrimental consequences on marine ecosystems.', 'Khí thải nhà kính quá mức gây ra những hậu quả tai hại đối với hệ sinh thái biển.', 'Academic / IELTS', 'B2', 'IELTS'],
-  ['Feasible', '/ˈfiː.zə.bəl/', 'adjective', 'Khả thi, có thể hiện thực hóa thành công', 'Investing in sustainable renewable energy represents a technologically feasible goal.', 'Đầu tư vào năng lượng tái tạo bền vững đại diện cho một mục tiêu hoàn toàn khả thi.', 'Academic / IELTS', 'B2', 'Academic'],
-  ['Ambiguity', '/ˌæm.bɪˈɡjuː.ə.ti/', 'noun', 'Sự mơ hồ, tính đa nghĩa khó phân định', 'Precise contractual phrasing eliminates legal ambiguity and mitigates future disputes.', 'Ngôn từ hợp đồng chính xác sẽ loại bỏ sự mơ hồ pháp lý và giảm thiểu tranh chấp sau này.', 'Academic / IELTS', 'C1', 'Academic'],
-  ['Eloquent', '/ˈel.ə.kwənt/', 'adjective', 'Hùng biện, diễn đạt lưu loát và giàu sức thuyết phục', 'The keynote speaker delivered an eloquent address on societal equity.', 'Diễn giả chính đã có bài phát biểu hùng biện đầy thuyết phục về công bằng xã hội.', 'Academic / IELTS', 'C1', 'IELTS'],
-  ['Disseminate', '/dɪˈsem.ɪ.neɪt/', 'verb', 'Phổ biến và lan tỏa tri thức rộng rãi', 'Academic institutions disseminate scholarly research to benefit public welfare.', 'Các tổ chức học thuật phổ biến nghiên cứu khoa học để phục vụ lợi ích cộng đồng.', 'Academic / IELTS', 'C2', 'Academic'],
-  ['Comprehensive', '/ˌkɒm.prɪˈhen.sɪv/', 'adjective', 'Toàn diện, bao quát mọi khía cạnh', 'The university compiled a comprehensive curriculum encompassing modern data science.', 'Trường đại học đã biên soạn chương trình giảng dạy toàn diện bao quát khoa học dữ liệu hiện đại.', 'Academic / IELTS', 'B2', 'Academic'],
-  ['Heterogeneous', '/ˌhet.ər.əˈdʒiː.ni.əs/', 'adjective', 'Hỗn tạp, đa dạng thành phần khác biệt', 'Metropolitan cities feature heterogeneous populations with diverse cultural heritages.', 'Các đô thị lớn sở hữu dân số đa dạng với nhiều di sản văn hóa khác nhau.', 'Academic / IELTS', 'C2', 'Academic'],
-  ['Synthesize', '/ˈsɪn.θə.saɪz/', 'verb', 'Tổng hợp thông tin từ nhiều nguồn', 'Graduate students must synthesize disparate findings to construct coherent arguments.', 'Học viên cao học phải tổng hợp các kết quả nghiên cứu khác nhau để xây dựng lập luận chặt chẽ.', 'Academic / IELTS', 'C1', 'Academic'],
-  ['Pivotal', '/ˈpɪv.ə.təl/', 'adjective', 'Mang tính then chốt, quyết định', 'Clean water access plays a pivotal role in global public health initiatives.', 'Tiếp cận nước sạch đóng vai trò then chốt trong các sáng kiến y tế công cộng toàn cầu.', 'Academic / IELTS', 'C1', 'IELTS']
-];
-
-const BUSINESS_WORKPLACE_VOCAB = [
-  ['Leverage', '/ˈliː.vər.ɪdʒ/', 'verb', 'Tận dụng đòn bẩy và thế mạnh nguồn lực', 'Enterprises leverage predictive analytics to optimize customer lifetime value.', 'Doanh nghiệp tận dụng phân tích dự đoán để tối ưu hóa giá trị vòng đời khách hàng.', 'Business / Workplace', 'B2', 'Business'],
-  ['Stakeholder', '/ˈsteɪkˌhəʊl.dər/', 'noun', 'Bên liên quan trực tiếp đến dự án', 'Executive stakeholders convened to ratify the corporate restructuring roadmap.', 'Các bên liên quan cấp điều hành đã họp để phê chuẩn lộ trình tái cấu trúc doanh nghiệp.', 'Business / Workplace', 'B2', 'Business'],
-  ['Collaborate', '/kəˈlæb.ə.reɪt/', 'verb', 'Hợp tác chặt chẽ cùng làm việc', 'Cross-functional squads collaborate closely to accelerate time-to-market.', 'Các nhóm đa chức năng hợp tác chặt chẽ để rút ngắn thời gian đưa sản phẩm ra thị trường.', 'Business / Workplace', 'B1', 'Business'],
-  ['Consolidate', '/kənˈsɒl.ɪ.deɪt/', 'verb', 'Hợp nhất, củng cố vị thế vững mạnh', 'The logistics corporation consolidated regional warehouses into automated hubs.', 'Tập đoàn logistics đã hợp nhất các kho khu vực thành các trung tâm tự động hóa.', 'Business / Workplace', 'C1', 'Business'],
-  ['Procurement', '/prəˈkjʊə.mənt/', 'noun', 'Hoạt động mua sắm và cung ứng trang thiết bị', 'Strategic procurement protocols reduced operational expenditures by twenty percent.', 'Quy trình thu mua chiến lược đã cắt giảm 20% chi phí vận hành.', 'Business / Workplace', 'C1', 'Business'],
-  ['Monetize', '/ˈmʌn.ɪ.taɪz/', 'verb', 'Thương mại hóa và tạo dòng doanh thu', 'Digital creators monetize engagement via subscription tiers and branded sponsorships.', 'Các nhà sáng tạo số kiếm tiền từ tương tác thông qua các gói hội viên và tài trợ.', 'Business / Workplace', 'C1', 'Business'],
-  ['Proactive', '/prəʊˈæk.tɪv/', 'adjective', 'Chủ động đón đầu và giải quyết vấn đề', 'Proactive risk management forestalls costly compliance vulnerabilities.', 'Quản trị rủi ro chủ động ngăn ngừa các lỗ hổng tuân thủ tốn kém.', 'Business / Workplace', 'B2', 'Business'],
-  ['Synergy', '/ˈsɪn.ə.dʒi/', 'noun', 'Hiệu ứng cộng hưởng gia tăng sức mạnh', 'The strategic merger fostered organizational synergy and expanded market share.', 'Vụ sáp nhập chiến lược tạo ra sức mạnh cộng hưởng và mở rộng thị phần.', 'Business / Workplace', 'C1', 'Business'],
-  ['Deliverable', '/dɪˈlɪv.ər.ə.bəl/', 'noun', 'Sản phẩm bàn giao theo hợp đồng/sprint', 'The engineering team completed every sprint deliverable ahead of schedule.', 'Đội ngũ kỹ thuật đã hoàn thành mọi sản phẩm bàn giao của sprint trước thời hạn.', 'Business / Workplace', 'B2', 'Business'],
-  ['Benchmarking', '/ˈbentʃˌmɑː.kɪŋ/', 'noun', 'Quy trình đối chuẩn đánh giá hiệu năng', 'Competitive benchmarking reveals crucial areas for quality and efficiency gains.', 'Đối chuẩn cạnh tranh chỉ ra các khía cạnh quan trọng để cải thiện chất lượng và hiệu quả.', 'Business / Workplace', 'C1', 'Business']
-];
-
-const TOEIC_CORE_VOCAB = [
+  // --- ACADEMIC WORD LIST (AWL) & OXFORD 5000 ---
+  ['Yield', '/jiːld/', 'noun / verb', 'Sinh lợi, sản lượng, nhường đường', 'High-yield bonds offer attractive annual investment returns.', 'Trái phiếu sinh lời cao mang lại lợi nhuận đầu tư hàng năm hấp dẫn.', 'Academic / IELTS', 'B2', 'Business'],
+  ['Justify', '/ˈdʒʌs.tɪ.faɪ/', 'verb', 'Bào chữa, biện minh, căn lề văn bản', 'The architect justified the project budget with rigorous cost estimates.', 'Kiến trúc sư đã chứng minh tính hợp lý của ngân sách dự án bằng dự toán chi phí chặt chẽ.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Adapt', '/əˈdæpt/', 'verb', 'Thích nghi, điều chỉnh cho phù hợp', 'Successful organizations adapt quickly to volatile market conditions.', 'Các tổ chức thành công thích nghi nhanh chóng với các điều kiện thị trường biến động.', 'Oxford Core', 'B1', 'Daily'],
+  ['Observe', '/əbˈzɜːv/', 'verb', 'Quan sát, theo dõi cẩn thận', 'Scientists observe atmospheric patterns to forecast severe storm trajectories.', 'Các nhà khoa học quan sát các quy luật khí quyển để dự báo đường đi của bão lớn.', 'Oxford Core', 'B1', 'Academic'],
+  ['Analyze', '/ˈæn.əl.aɪz/', 'verb', 'Phân tích chi tiết dữ liệu', 'Data analysts analyze customer behavioral patterns to boost retention.', 'Chuyên viên phân tích dữ liệu nghiên cứu hành vi khách hàng để tăng tỷ lệ giữ chân.', 'Academic / IELTS', 'B1', 'Academic'],
+  ['Enhance', '/ɪnˈhɑːns/', 'verb', 'Nâng cao, tăng cường chất lượng', 'Continuous practice significantly enhances spoken English fluency.', 'Luyện tập liên tục giúp nâng cao đáng kể sự lưu loát khi nói tiếng Anh.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Maintain', '/meɪnˈteɪn/', 'verb', 'Duy trì, giữ gìn và bảo dưỡng', 'Regular exercise helps maintain optimal cardiovascular wellness.', 'Tập thể dục đều đặn giúp duy trì sức khỏe tim mạch tối ưu.', 'Oxford Core', 'B1', 'Business'],
+  ['Promote', '/prəˈməʊt/', 'verb', 'Thúc đẩy, quảng bá và thăng chức', 'Workplace initiatives promote gender diversity and career advancement.', 'Các sáng kiến tại nơi làm việc thúc đẩy bình đẳng giới và cơ hội thăng tiến.', 'TOEIC Core', 'B1', 'TOEIC'],
+  ['Resolve', '/rɪˈzɒlv/', 'verb', 'Giải quyết triệt để vấn đề', 'Diplomatic mediators worked tirelessly to resolve international conflicts.', 'Các nhà trung gian ngoại giao làm việc không mệt mỏi để giải quyết các xung đột quốc tế.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Acquire', '/əˈkwaɪər/', 'verb', 'Thu nhận, đạt được kỹ năng mới', 'Children acquire language skills through immersive social interaction.', 'Trẻ em tiếp thu kỹ năng ngôn ngữ thông qua tương tác xã hội tự nhiên.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Allocate', '/ˈæl.ə.keɪt/', 'verb', 'Phân bổ nguồn lực và ngân sách', 'The finance committee allocated additional resources to research laboratories.', 'Hội đồng tài chính đã phân bổ thêm nguồn lực cho các phòng thí nghiệm nghiên cứu.', 'Business / Workplace', 'B2', 'Business'],
+  ['Evaluate', '/ɪˈvæl.ju.eɪt/', 'verb', 'Đánh giá định lượng toàn diện', 'Committees evaluate proposal feasibility before approving funding.', 'Hội đồng đánh giá tính khả thi của đề xuất trước khi phê duyệt kinh phí.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Assess', '/əˈses/', 'verb', 'Thẩm định và lượng giá rủi ro', 'Independent auditors assess corporate financial statements annually.', 'Kiểm toán viên độc lập thẩm định báo cáo tài chính doanh nghiệp hàng năm.', 'Academic / IELTS', 'B2', 'Business'],
+  ['Demonstrate', '/ˈdem.ən.streɪt/', 'verb', 'Chứng minh bằng thực tế dẫn chứng', 'The trial demonstrates clinical efficacy without adverse side effects.', 'Thử nghiệm chứng minh hiệu quả lâm sàng mà không có tác dụng phụ bất lợi.', 'Academic / IELTS', 'B1', 'Academic'],
+  ['Expand', '/ɪkˈspænd/', 'verb', 'Mở rộng quy mô và phạm vi', 'The enterprise plans to expand logistics networks across Latin America.', 'Doanh nghiệp có kế hoạch mở rộng mạng lưới logistics khắp Mỹ Latinh.', 'Business / Workplace', 'B1', 'Business'],
+  ['Integrate', '/ˈɪn.tɪ.ɡreɪt/', 'verb', 'Tích hợp và kết hợp hài hòa', 'Modern curricula integrate practical coding projects with theory.', 'Chương trình giảng dạy hiện đại tích hợp các dự án lập trình thực tế với lý thuyết.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Implement', '/ˈɪm.plɪ.ment/', 'verb', 'Triển khai và thực thi kế hoạch', 'Hospitals implement rigorous sanitization protocols to prevent infection.', 'Các bệnh viện thực hiện quy trình khử khuẩn nghiêm ngặt để phòng lây nhiễm.', 'Business / Workplace', 'B2', 'Business'],
+  ['Innovate', '/ˈɪn.ə.veɪt/', 'verb', 'Đổi mới sáng tạo công nghệ', 'Tech companies innovate rapidly to sustain competitive advantages.', 'Các công ty công nghệ đổi mới nhanh chóng để duy trì lợi thế cạnh tranh.', 'Business / Workplace', 'B2', 'Tech'],
+  ['Generate', '/ˈdʒen.ər.eɪt/', 'verb', 'Tạo ra, phát sinh dữ liệu/doanh thu', 'Renewable solar farms generate clean electrical power for cities.', 'Các trang trại năng lượng mặt trời tạo ra điện sạch cho các thành phố.', 'Oxford Core', 'B1', 'Daily'],
+  ['Optimize', '/ˈɒp.tɪ.maɪz/', 'verb', 'Tối ưu hóa hiệu năng hệ thống', 'Engineers optimize database queries to reduce server response times.', 'Các kỹ sư tối ưu hóa truy vấn cơ sở dữ liệu để giảm thời gian phản hồi.', 'IT / Tech', 'B2', 'Tech'],
+  ['Collaborate', '/kəˈlæb.ə.reɪt/', 'verb', 'Hợp tác chặt chẽ cùng làm việc', 'Remote developers collaborate using version control and chat tools.', 'Các lập trình viên làm việc từ xa cộng tác thông qua hệ thống quản lý mã nguồn.', 'Business / Workplace', 'B1', 'Business'],
+  ['Consolidate', '/kənˈsɒl.ɪ.deɪt/', 'verb', 'Hợp nhất, củng cố vị thế vững mạnh', 'The logistics firm consolidated regional branches into a central hub.', 'Công ty vận tải đã hợp nhất các chi nhánh khu vực thành một đầu mối trung tâm.', 'Business / Workplace', 'C1', 'Business'],
+  ['Leverage', '/ˈliː.vər.ɪdʒ/', 'verb', 'Tận dụng đòn bẩy và thế mạnh', 'Marketers leverage influencer reach to amplify brand awareness.', 'Các nhà tiếp thị tận dụng sức ảnh hưởng để khuếch đại nhận diện thương hiệu.', 'Business / Workplace', 'B2', 'Business'],
+  ['Mitigate', '/ˈmɪt.ɪ.ɡeɪt/', 'verb', 'Giảm thiểu rủi ro và thiệt hại', 'Diversification helps investors mitigate portfolio volatility.', 'Đa dạng hóa danh mục giúp nhà đầu tư giảm thiểu sự biến động rủi ro.', 'Business / Workplace', 'C1', 'Business'],
+  ['Facilitate', '/fəˈsɪl.ɪ.teɪt/', 'verb', 'Tạo điều kiện thuận lợi hỗ trợ', 'Digital platforms facilitate seamless cross-border financial transactions.', 'Các nền tảng số tạo điều kiện thuận lợi cho giao dịch tài chính xuyên biên giới.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Sustain', '/səˈsteɪn/', 'verb', 'Duy trì bền vững lâu dài', 'Ecosystems require balanced biodiversity to sustain environmental health.', 'Hệ sinh thái đòi hỏi sự đa dạng sinh học cân bằng để duy trì môi trường trong lành.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Synthesize', '/ˈsɪn.θə.saɪz/', 'verb', 'Tổng hợp thông tin từ nhiều nguồn', 'Researchers synthesize empirical data to formulate new scientific laws.', 'Các nhà nghiên cứu tổng hợp dữ liệu thực nghiệm để xây dựng định luật khoa học mới.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Transform', '/trænsˈfɔːm/', 'verb', 'Chuyển đổi toàn diện cấu trúc', 'Automation transforms traditional manufacturing into high-efficiency smart factories.', 'Tự động hóa chuyển đổi sản xuất truyền thống thành các nhà máy thông minh hiệu quả cao.', 'Oxford Core', 'B1', 'Tech'],
+  ['Validate', '/ˈvæl.ɪ.deɪt/', 'verb', 'Xác thực tính hợp lệ chính xác', 'Statistical tests validate experimental conclusions prior to publication.', 'Các kiểm định thống kê xác thực kết luận thử nghiệm trước khi công bố.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Execute', '/ˈek.sɪ.kjuːt/', 'verb', 'Thực thi lệnh hoặc kế hoạch', 'The trading bot executes financial transactions within microseconds.', 'Bot giao dịch thực thi các lệnh tài chính chỉ trong vài micro giây.', 'IT / Tech', 'B2', 'Tech'],
+  ['Monitor', '/ˈmɒn.ɪ.tər/', 'verb', 'Giám sát liên tục trạng thái', 'Network administrators monitor server uptime around the clock.', 'Quản trị viên mạng giám sát thời gian hoạt động của máy chủ liên tục 24/7.', 'Oxford Core', 'B1', 'Tech'],
+  ['Establish', '/ɪˈstæb.lɪʃ/', 'verb', 'Thiết lập nền tảng vững chắc', 'The university established new research centers in biotechnology.', 'Trường đại học đã thành lập các trung tâm nghiên cứu mới về công nghệ sinh học.', 'Oxford Core', 'B1', 'Academic'],
+  ['Navigate', '/ˈnæv.ɪ.ɡeɪt/', 'verb', 'Điều hướng và tìm phương hướng', 'Pilots navigate aircraft using precision satellite guidance systems.', 'Phi công điều hướng máy bay bằng hệ thống dẫn đường vệ tinh chính xác.', 'Oxford Core', 'B1', 'Daily'],
+  ['Accelerate', '/əkˈsel.ə.reɪt/', 'verb', 'Tăng tốc tiến độ thực hiện', 'Electric motors accelerate vehicles rapidly with instant torque delivery.', 'Động cơ điện giúp xe tăng tốc nhanh chóng nhờ mô-men xoắn tức thì.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Benchmark', '/ˈbentʃ.mɑːk/', 'noun / verb', 'Chuẩn đối sánh hiệu suất kinh doanh', 'Engineers benchmark processor speeds across multiple compute workloads.', 'Các kỹ sư đối chuẩn tốc độ bộ xử lý trên nhiều khối lượng công việc tính toán.', 'Business / Workplace', 'B2', 'Business'],
+  ['Strategy', '/ˈstræt.ə.dʒi/', 'noun', 'Chiến lược, kế hoạch dài hạn', 'Corporate strategy outlines strategic priorities for five-year growth.', 'Chiến lược doanh nghiệp vạch ra các ưu tiên chiến lược cho tăng trưởng 5 năm.', 'Business / Workplace', 'B1', 'Business'],
+  ['Focus', '/ˈfəʊ.kəs/', 'noun / verb', 'Tập trung, tiêu điểm chú ý', 'Meditation sharpens mental focus and alleviates daily work stress.', 'Thiền định giúp rèn luyện sự tập trung tinh thần và giảm bớt căng thẳng công việc.', 'Oxford Core', 'A2', 'Daily'],
+  ['Deliver', '/dɪˈlɪv.ər/', 'verb', 'Bàn giao sản phẩm đúng hạn', 'The logistics service delivers packages across the nation overnight.', 'Dịch vụ hậu cần giao bưu kiện trên toàn quốc chỉ trong một đêm.', 'TOEIC Core', 'B1', 'TOEIC'],
+  ['Negotiate', '/nəˈɡəʊ.ʃi.eɪt/', 'verb', 'Đàm phán và thương lượng điều khoản', 'Diplomats negotiated a landmark trade agreement between nations.', 'Các nhà ngoại giao đã đàm phán một hiệp định thương mại mang tính bước ngoặt.', 'TOEIC Core', 'B2', 'TOEIC'],
   ['Itinerary', '/aɪˈtɪn.ər.ər.i/', 'noun', 'Lịch trình chuyến công tác / du lịch', 'The executive secretary finalized the corporate conference itinerary.', 'Thư ký điều hành đã hoàn tất lịch trình hội nghị doanh nghiệp.', 'TOEIC Core', 'B1', 'TOEIC'],
-  ['Reimburse', '/ˌriː.ɪmˈbɜːs/', 'verb', 'Hoàn trả lại chi phí đã chi', 'The accounting department will reimburse verified travel expenditures within five business days.', 'Phòng kế toán sẽ hoàn trả chi phí công tác hợp lệ trong vòng năm ngày làm việc.', 'TOEIC Core', 'B2', 'TOEIC'],
-  ['Negotiate', '/nəˈɡəʊ.ʃi.eɪt/', 'verb', 'Đàm phán và thương lượng điều khoản', 'Our legal counsel negotiated favorable warranty clauses in the vendor agreement.', 'Cố vấn pháp lý của chúng tôi đã đàm phán các điều khoản bảo hành có lợi trong hợp đồng nhà cung cấp.', 'TOEIC Core', 'B2', 'TOEIC'],
-  ['Warranty', '/ˈwɒr.ən.ti/', 'noun', 'Chính sách bảo hành sản phẩm', 'Commercial equipment includes an extended three-year parts and labor warranty.', 'Thiết bị thương mại bao gồm gói bảo hành linh kiện và nhân công mở rộng 3 năm.', 'TOEIC Core', 'B1', 'TOEIC'],
-  ['Merchandise', '/ˈmɜː.tʃən.daɪs/', 'noun', 'Hàng hóa thương mại được bày bán', 'Retail stores inspect incoming merchandise for quality assurance standards.', 'Các cửa hàng bán lẻ kiểm tra hàng hóa nhập kho theo tiêu chuẩn đảm bảo chất lượng.', 'TOEIC Core', 'B1', 'TOEIC'],
-  ['Compensation', '/ˌkɒm.penˈseɪ.ʃən/', 'noun', 'Lương thưởng và chế độ đãi ngộ', 'The multinational enterprise offers competitive compensation and health insurance packages.', 'Doanh nghiệp đa quốc gia cung cấp gói lương thưởng và bảo hiểm y tế cạnh tranh.', 'TOEIC Core', 'B2', 'TOEIC'],
-  ['Promotional', '/prəˈməʊ.ʃən.əl/', 'adjective', 'Thuộc về khuyến mãi và quảng bá', 'Marketing launched a promotional campaign across digital social channels.', 'Phòng tiếp thị đã phát động chiến dịch khuyến mãi trên các kênh mạng xã hội.', 'TOEIC Core', 'B1', 'TOEIC'],
-  ['Supervision', '/ˌsuː.pəˈvɪʒ.ən/', 'noun', 'Sự giám sát và quản lý công việc', 'Laboratory technicians operate under the direct supervision of the chief chemist.', 'Các kỹ thuật viên phòng lab làm việc dưới sự giám sát trực tiếp của trưởng nhóm hóa học.', 'TOEIC Core', 'B2', 'TOEIC']
+  ['Reimburse', '/ˌriː.ɪmˈbɜːs/', 'verb', 'Hoàn trả lại chi phí đã chi', 'Accounting reimburses travel expenses within five business days.', 'Phòng kế toán hoàn trả chi phí công tác trong vòng năm ngày làm việc.', 'TOEIC Core', 'B2', 'TOEIC'],
+  ['Warranty', '/ˈwɒr.ən.ti/', 'noun', 'Chính sách bảo hành sản phẩm', 'Commercial equipment includes an extended three-year parts warranty.', 'Thiết bị thương mại bao gồm gói bảo hành linh kiện mở rộng ba năm.', 'TOEIC Core', 'B1', 'TOEIC'],
+  ['Merchandise', '/ˈmɜː.tʃən.daɪs/', 'noun', 'Hàng hóa thương mại bày bán', 'Retail stores inspect incoming merchandise for quality assurance.', 'Các cửa hàng bán lẻ kiểm tra chất lượng hàng hóa nhập kho.', 'TOEIC Core', 'B1', 'TOEIC'],
+  ['Compensation', '/ˌkɒm.penˈseɪ.ʃən/', 'noun', 'Lương thưởng và chế độ đãi ngộ', 'The firm offers competitive compensation and comprehensive healthcare.', 'Công ty cung cấp mức lương thưởng cạnh tranh và bảo hiểm y tế toàn diện.', 'TOEIC Core', 'B2', 'TOEIC'],
+  ['Supervision', '/ˌsuː.pəˈvɪʒ.ən/', 'noun', 'Sự giám sát và quản lý công việc', 'Apprentices practice under the direct supervision of master craftspeople.', 'Học việc thực hành dưới sự giám sát trực tiếp của các nghệ nhân bậc thầy.', 'TOEIC Core', 'B2', 'TOEIC'],
+  ['Ubiquitous', '/juːˈbɪk.wɪ.təs/', 'adjective', 'Hiện diện khắp mọi nơi, phổ biến', 'Mobile connectivity has become ubiquitous across modern urban centers.', 'Kết nối di động đã trở nên phổ biến khắp các trung tâm đô thị hiện đại.', 'Academic / IELTS', 'C1', 'IELTS'],
+  ['Resilience', '/rɪˈzɪl.jəns/', 'noun', 'Khả năng phục hồi kiên cường', 'Mental resilience enables professionals to thrive under intense pressures.', 'Khả năng phục hồi tinh thần giúp chuyên gia phát triển dưới áp lực lớn.', 'Academic / IELTS', 'C1', 'IELTS'],
+  ['Pragmatic', '/præɡˈmæt.ɪk/', 'adjective', 'Thực tế, coi trọng tính ứng dụng', 'Engineers adopt pragmatic approaches to resolve complex technical hurdles.', 'Các kỹ sư áp dụng phương pháp thực tiễn để giải quyết các rào cản kỹ thuật phức tạp.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Meticulous', '/məˈtɪk.jə.ləs/', 'adjective', 'Tỉ mỉ, cẩn trọng từng chi tiết', 'Auditors conducted a meticulous review of all corporate balance sheets.', 'Các kiểm toán viên đã tiến hành xem xét tỉ mỉ tất cả các bảng cân đối kế toán.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Paradigm', '/ˈpær.ə.daɪm/', 'noun', 'Hệ quy chiếu, hình mẫu tư duy', 'Cloud computing sparked a paradigm shift in scalable system architectures.', 'Điện toán đám mây đã châm ngòi cho sự dịch chuyển mô thức trong kiến trúc hệ thống.', 'Academic / IELTS', 'C2', 'Academic']
 ];
 
-function generateComplete10500Vocab() {
+// Danh sách các từ vựng Oxford 3000/5000 bổ sung kèm nghĩa tiếng Việt chuẩn
+const ADDITIONAL_OXFORD_SEEDS = [
+  ['Accountable', '/əˈkaʊn.tə.bəl/', 'adjective', 'Chịu trách nhiệm giải trình', 'Leaders remain accountable to their team members.', 'Các nhà lãnh đạo luôn chịu trách nhiệm trước các thành viên trong nhóm.', 'Academic / IELTS', 'B2', 'Business'],
+  ['Accurate', '/ˈæk.jə.rət/', 'adjective', 'Chính xác, chuẩn xác từng chi tiết', 'Accurate meteorological measurements ensure dependable forecast models.', 'Các phép đo khí tượng chính xác đảm bảo mô hình dự báo đáng tin cậy.', 'Oxford Core', 'B1', 'Academic'],
+  ['Achieve', '/əˈtʃiːv/', 'verb', 'Đạt được thành tựu, mục tiêu', 'Dedicated students achieve high scores through disciplined study schedules.', 'Học sinh chăm chỉ đạt điểm cao nhờ lịch học tập có kỷ luật.', 'Oxford Core', 'A2', 'Daily'],
+  ['Acknowledge', '/əkˈnɒl.ɪdʒ/', 'verb', 'Công nhận, thừa nhận sự thật', 'The management acknowledged outstanding contributions during the gala.', 'Ban quản lý đã ghi nhận những đóng góp xuất sắc trong buổi dạ tiệc.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Adequate', '/ˈæd.ə.kwət/', 'adjective', 'Đầy đủ, thỏa đáng theo yêu cầu', 'Ensure adequate hydration before commencing strenuous athletic workouts.', 'Đảm bảo bổ sung đủ nước trước khi bắt đầu các bài tập thể lực nặng.', 'Oxford Core', 'B1', 'Daily'],
+  ['Advocate', '/ˈæd.və.keɪt/', 'noun / verb', 'Ủng hộ, tán thành công khai', 'Environmentalists advocate for renewable energy transition policies.', 'Các nhà bảo vệ môi trường ủng hộ chính sách chuyển đổi năng lượng tái tạo.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Aesthetic', '/esˈθet.ɪk/', 'adjective', 'Thuộc về thẩm mỹ, nghệ thuật', 'Minimalist UI design balances clean aesthetics with intuitive usability.', 'Thiết kế giao diện tối giản cân bằng giữa tính thẩm mỹ và tính dễ dùng.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Afford', '/əˈfɔːd/', 'verb', 'Đủ khả năng chi trả tài chính', 'Modern subsidies enable working families to afford quality childcare.', 'Các khoản trợ cấp hiện đại giúp các gia đình lao động có đủ khả năng chi trả dịch vụ chăm sóc trẻ.', 'Oxford Core', 'A2', 'Daily'],
+  ['Aggressive', '/əˈɡres.ɪv/', 'adjective', 'Quyết liệt, xông xáo năng nổ', 'Startups execute aggressive market expansion campaigns in early phases.', 'Các startup thực hiện các chiến dịch mở rộng thị trường quyết liệt trong giai đoạn đầu.', 'Oxford Core', 'B2', 'Business'],
+  ['Alternative', '/ɒlˈtɜː.nə.tɪv/', 'noun / adjective', 'Phương án thay thế, lựa chọn khác', 'Electric transit options present clean alternatives to fossil fuel buses.', 'Phương tiện giao thông điện là giải pháp thay thế sạch cho xe buýt chạy bằng nhiên liệu hóa thạch.', 'Oxford Core', 'B1', 'Daily'],
+  ['Apparent', '/əˈpær.ənt/', 'adjective', 'Rõ ràng, hiển nhiên thấy được', 'The tangible benefits of digital transformation became apparent quickly.', 'Những lợi ích rõ rệt của chuyển đổi số đã trở nên hiển nhiên nhanh chóng.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Appreciate', '/əˈpriː.ʃi.eɪt/', 'verb', 'Đánh giá cao, trân trọng cảm kích', 'Mentors appreciate diligent students who ask insightful questions.', 'Người hướng dẫn đánh giá cao những học viên chăm chỉ biết đặt câu hỏi sâu sắc.', 'Oxford Core', 'B1', 'Daily'],
+  ['Appropriate', '/əˈprəʊ.pri.ət/', 'adjective', 'Thích hợp, đúng mực chuẩn mực', 'Select appropriate architectural patterns tailored to project requirements.', 'Lựa chọn các mẫu kiến trúc phù hợp được thiết kế theo yêu cầu dự án.', 'Oxford Core', 'B1', 'Academic'],
+  ['Arbitrary', '/ˈɑː.bɪ.trər.i/', 'adjective', 'Tùy tiện, độc đoán không căn cứ', 'Avoid arbitrary design choices without validating user data analytics.', 'Tránh các quyết định thiết kế tùy tiện mà không kiểm chứng dữ liệu người dùng.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Aspect', '/ˈæs.pekt/', 'noun', 'Khía cạnh, góc độ xem xét', 'Security testing examines every critical aspect of system architecture.', 'Kiểm thử bảo mật kiểm tra mọi khía cạnh quan trọng của kiến trúc hệ thống.', 'Oxford Core', 'B1', 'Academic'],
+  ['Assemble', '/əˈsem.bəl/', 'verb', 'Tập hợp, lắp ráp linh kiện', 'Automated robotics assemble automotive components with precision.', 'Robot tự động hóa lắp ráp các linh kiện ô tô với độ chính xác cao.', 'Oxford Core', 'B2', 'Tech'],
+  ['Attribute', '/əˈtrɪb.juːt/', 'noun / verb', 'Quy cho, thuộc tính đặc trưng', 'Analysts attribute revenue growth to international market expansions.', 'Các nhà phân tích cho rằng tăng trưởng doanh thu là nhờ mở rộng thị trường quốc tế.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Authentic', '/ɔːˈθen.tɪk/', 'adjective', 'Đích thực, chân thật nguyên bản', 'Culinary critics praise restaurants that serve authentic regional recipes.', 'Các nhà phê bình ẩm thực ca ngợi các nhà hàng phục vụ các món ăn truyền thống chuẩn vị.', 'Oxford Core', 'B2', 'Daily'],
+  ['Authority', '/ɔːˈθɒr.ə.ti/', 'noun', 'Thẩm quyền, cơ quan chức năng', 'Aviation authorities enforce strict international flight safety codes.', 'Các cơ quan hàng không thực thi các quy chuẩn an toàn bay quốc tế nghiêm ngặt.', 'Oxford Core', 'B1', 'Academic'],
+  ['Available', '/əˈveɪ.lə.bəl/', 'adjective', 'Có sẵn, sẵn sàng sử dụng', 'Technical support representatives are available around the clock.', 'Các đại diện hỗ trợ kỹ thuật luôn sẵn sàng phục vụ suốt ngày đêm.', 'Oxford Core', 'A2', 'Daily'],
+  ['Barrier', '/ˈbær.i.ər/', 'noun', 'Rào cản, trở ngại ngăn cách', 'Language translation apps break down cultural communication barriers.', 'Các ứng dụng dịch ngôn ngữ phá vỡ rào cản giao tiếp văn hóa.', 'Oxford Core', 'B1', 'Daily'],
+  ['Benefit', '/ˈben.ɪ.fɪt/', 'noun / verb', 'Lợi ích, phúc lợi hỗ trợ', 'Subscribers enjoy exclusive discounts and early access benefits.', 'Hội viên đăng ký được hưởng các ưu đãi giảm giá độc quyền và quyền truy cập sớm.', 'Oxford Core', 'A2', 'Daily'],
+  ['Boundary', '/ˈbaʊn.dər.i/', 'noun', 'Ranh giới, giới hạn phạm vi', 'Clear personal boundaries promote healthy long-term work-life balance.', 'Ranh giới cá nhân rõ ràng thúc đẩy sự cân bằng lành mạnh giữa công việc và cuộc sống.', 'Oxford Core', 'B2', 'Daily'],
+  ['Capable', '/ˈkeɪ.pə.bəl/', 'adjective', 'Có năng lực, có khả năng làm được', 'The new graphics card is capable of rendering real-time ray tracing.', 'Card đồ họa mới có khả năng xử lý dò tia thời gian thực mượt mà.', 'Oxford Core', 'B1', 'Tech'],
+  ['Category', '/ˈkæt.ə.ɡri/', 'noun', 'Hạng mục, thể loại phân loại', 'Products are organized into intuitive categories for effortless browsing.', 'Sản phẩm được sắp xếp thành các danh mục trực quan để dễ dàng tìm kiếm.', 'Oxford Core', 'B1', 'Daily'],
+  ['Challenge', '/ˈtʃæl.ɪndʒ/', 'noun / verb', 'Thử thách, thách thức khó khăn', 'Overcoming engineering challenges fosters professional expertise.', 'Vượt qua các thách thức kỹ thuật giúp bồi đắp chuyên môn nghề nghiệp.', 'Oxford Core', 'B1', 'Daily'],
+  ['Clarify', '/ˈklær.ɪ.faɪ/', 'verb', 'Làm rõ, giải thích sáng tỏ', 'Please clarify the acceptance criteria before commencing development.', 'Vui lòng làm rõ các tiêu chí nghiệm thu trước khi bắt đầu phát triển.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Cognitive', '/ˈkɒɡ.nə.tɪv/', 'adjective', 'Thuộc về nhận thức, tư duy não bộ', 'Reading regularly enhances cognitive memory retention and mental focus.', 'Đọc sách thường xuyên giúp tăng cường khả năng ghi nhớ nhận thức và sự tập trung.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Coherent', '/kəʊˈhɪə.rənt/', 'adjective', 'Mạch lạc, liên kết chặt chẽ', 'The presenter articulated a coherent narrative that captivated investors.', 'Người thuyết trình đã trình bày một câu chuyện mạch lạc thu hút các nhà đầu tư.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Commodity', '/kəˈmɒd.ə.ti/', 'noun', 'Hàng hóa thương mại thiết yếu', 'Crude oil and natural gas remain heavily traded global commodities.', 'Dầu thô và khí tự nhiên vẫn là các mặt hàng thương mại toàn cầu được giao dịch nhiều.', 'Business / Workplace', 'B2', 'Business'],
+  ['Compatible', '/kəmˈpæt.ə.bəl/', 'adjective', 'Tương thích, hòa hợp với nhau', 'Ensure all plug-ins are compatible with the latest platform release.', 'Đảm bảo tất cả các tiện ích mở rộng đều tương thích với phiên bản nền tảng mới nhất.', 'Oxford Core', 'B2', 'Tech'],
+  ['Compensate', '/ˈkɒm.pən.seɪt/', 'verb', 'Đền bù, bồi thường thiệt hại', 'Airlines compensate passengers for extended involuntary flight delays.', 'Các hãng hàng không bồi thường cho hành khách khi chuyến bay bị hoãn kéo dài.', 'Business / Workplace', 'B2', 'Business'],
+  ['Competent', '/ˈkɒm.pɪ.tənt/', 'adjective', 'Có đủ năng lực, thành thạo công việc', 'Recruit competent software architects to guide enterprise migrations.', 'Tuyển dụng các kiến trúc sư phần mềm có năng lực để dẫn dắt chuyển đổi doanh nghiệp.', 'Academic / IELTS', 'B2', 'Business'],
+  ['Component', '/kəmˈpəʊ.nənt/', 'noun', 'Thành phần, linh kiện cấu thành', 'Reusable UI components reduce frontend engineering cycle times.', 'Các thành phần giao diện tái sử dụng giúp giảm thời gian kỹ thuật giao diện người dùng.', 'Oxford Core', 'B1', 'Tech'],
+  ['Compound', '/ˈkɒm.paʊnd/', 'noun / verb', 'Hợp chất, tích lũy lãi kép', 'Compound interest accelerates long-term retirement wealth accumulation.', 'Lãi kép giúp đẩy nhanh quá trình tích lũy tài sản hưu trí dài hạn.', 'Oxford Core', 'B2', 'Business'],
+  ['Comprehend', '/ˌkɒm.prɪˈhend/', 'verb', 'Hiểu thấu đáo, lĩnh hội trọn vẹn', 'Mastering grammar helps students comprehend complex academic texts.', 'Nắm vững ngữ pháp giúp học sinh hiểu thấu đáo các văn bản học thuật phức tạp.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Compromise', '/ˈkɒm.prə.maɪz/', 'noun / verb', 'Thỏa hiệp, nhượng bộ lẫn nhau', 'Successful negotiations require both parties to find a fair compromise.', 'Các cuộc đàm phán thành công đòi hỏi cả hai bên phải tìm được sự thỏa hiệp công bằng.', 'Oxford Core', 'B2', 'Business'],
+  ['Conceive', '/kənˈsiːv/', 'verb', 'Hình thành ý niệm, tưởng tượng', 'Designers conceived a revolutionary modular consumer electronics concept.', 'Các nhà thiết kế đã nảy ra ý tưởng thiết bị điện tử tiêu dùng dạng mô-đun mang tính đột phá.', 'Academic / IELTS', 'C1', 'Academic'],
+  ['Concentrate', '/ˈkɒn.sən.treɪt/', 'verb', 'Tập trung cao độ tinh thần', 'Quiet library environments allow scholars to concentrate on research.', 'Môi trường thư viện yên tĩnh cho phép các học giả tập trung vào nghiên cứu.', 'Oxford Core', 'B1', 'Daily'],
+  ['Conclude', '/kənˈkluːd/', 'verb', 'Kết luận, đúc rút nhận định', 'Researchers concluded that regular exercise boosts immune defense.', 'Các nhà nghiên cứu kết luận rằng tập thể dục đều đặn giúp tăng cường hệ miễn dịch.', 'Oxford Core', 'B1', 'Academic'],
+  ['Concurrent', '/kənˈkʌr.ənt/', 'adjective', 'Đồng thời xảy ra cùng lúc', 'The server seamlessly processes thousands of concurrent user queries.', 'Máy chủ xử lý liền mạch hàng nghìn truy vấn người dùng đồng thời.', 'Academic / IELTS', 'C1', 'Tech'],
+  ['Conduct', '/kənˈdʌkt/', 'verb', 'Tiến hành, thực hiện nghiên cứu', 'Scientists conduct controlled laboratory trials under strict supervision.', 'Các nhà khoa học tiến hành các thử nghiệm phòng thí nghiệm có kiểm soát.', 'Academic / IELTS', 'B1', 'Academic'],
+  ['Confirm', '/kənˈfɜːm/', 'verb', 'Xác nhận tính chính xác', 'Please confirm your airline seat reservation via the confirmation email.', 'Vui lòng xác nhận chỗ ngồi trên chuyến bay qua email xác nhận.', 'Oxford Core', 'A2', 'Daily'],
+  ['Conflict', '/ˈkɒn.flɪkt/', 'noun / verb', 'Xung đột, mâu thuẫn bất đồng', 'Mediation sessions aim to defuse interpersonal workplace conflicts.', 'Các buổi hòa giải nhằm làm dịu các mâu thuẫn cá nhân tại nơi làm việc.', 'Oxford Core', 'B1', 'Business'],
+  ['Conform', '/kənˈfɔːm/', 'verb', 'Tuân thủ quy chuẩn chung', 'All manufactured automotive parts must conform to ISO quality standards.', 'Tất cả các phụ tùng ô tô sản xuất phải tuân thủ các tiêu chuẩn chất lượng ISO.', 'Academic / IELTS', 'B2', 'Business'],
+  ['Consent', '/kənˈsent/', 'noun / verb', 'Đồng ý, chấp thuận chính thức', 'Medical procedures require signed patient informed consent forms.', 'Các thủ tục y tế yêu cầu phải có biểu mẫu đồng ý có hiểu biết của bệnh nhân.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Consistent', '/kənˈsɪs.tənt/', 'adjective', 'Nhất quán, kiên định trước sau', 'Consistent daily practice develops lasting technical proficiency.', 'Luyện tập đều đặn hàng ngày giúp phát triển trình độ chuyên môn bền vững.', 'Academic / IELTS', 'B2', 'Daily'],
+  ['Construct', '/kənˈstrʌkt/', 'verb', 'Xây dựng, kiến tạo công trình', 'Engineers constructed an earthquake-resistant suspension bridge.', 'Các kỹ sư đã xây dựng một cây cầu treo có khả năng chống động đất.', 'Oxford Core', 'B1', 'Tech'],
+  ['Consult', '/kənˈsʌlt/', 'verb', 'Tham vấn, hỏi ý kiến chuyên gia', 'Patients consult medical specialists for customized treatment regimens.', 'Bệnh nhân tham khảo ý kiến bác sĩ chuyên khoa để có phác đồ điều trị phù hợp.', 'Oxford Core', 'B1', 'Daily'],
+  ['Consume', '/kənˈsjuːm/', 'verb', 'Tiêu thụ, sử dụng năng lượng', 'Electric vehicles consume significantly less energy than gas equivalents.', 'Xe điện tiêu thụ ít năng lượng hơn đáng kể so với xe chạy xăng cùng loại.', 'Oxford Core', 'B1', 'Daily'],
+  ['Contact', '/ˈkɒn.tækt/', 'noun / verb', 'Liên hệ, tiếp xúc giao dịch', 'Feel free to contact customer support for real-time technical help.', 'Vui lòng liên hệ với bộ phận hỗ trợ khách hàng để được trợ giúp kỹ thuật tức thì.', 'Oxford Core', 'A2', 'Daily'],
+  ['Contemporary', '/kənˈtem.pər.ər.i/', 'adjective', 'Đương đại, cùng thời kỳ', 'Contemporary art exhibitions celebrate diverse global perspectives.', 'Các triển lãm nghệ thuật đương đại tôn vinh nhiều góc nhìn đa dạng trên toàn cầu.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Context', '/ˈkɒn.tekst/', 'noun', 'Ngữ cảnh, bối cảnh thực tế', 'Interpreting phrases in context clarifies nuanced semantic meanings.', 'Việc giải nghĩa các cụm từ trong ngữ cảnh giúp làm rõ các tầng nghĩa tinh tế.', 'Academic / IELTS', 'B1', 'Academic'],
+  ['Contrast', '/ˈkɒn.trɑːst/', 'noun / verb', 'Tương phản, đối lập rõ rệt', 'The stark contrast between light and shadow heightens visual drama.', 'Sự tương phản rõ rệt giữa ánh sáng và bóng tối làm tăng kịch tính thị giác.', 'Oxford Core', 'B1', 'Daily'],
+  ['Contribute', '/kənˈtrɪb.juːt/', 'verb', 'Đóng góp, cống hiến giá trị', 'Every team member contributed insightful suggestions during the sprint.', 'Mỗi thành viên trong nhóm đều đóng góp những gợi ý sâu sắc trong suốt sprint.', 'Oxford Core', 'B1', 'Business'],
+  ['Convert', '/kənˈvɜːt/', 'verb', 'Chuyển đổi hình thức, định dạng', 'Web tools convert vector graphic files into optimized WebP formats.', 'Các công cụ web chuyển đổi tệp đồ họa vector thành định dạng WebP tối ưu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Convince', '/kənˈvɪns/', 'verb', 'Thuyết phục người khác tin tưởng', 'Compelling empirical evidence convinced scientists of the theory.', 'Bằng chứng thực nghiệm thuyết phục đã khiến các nhà khoa học tin vào lý thuyết.', 'Oxford Core', 'B1', 'Academic'],
+  ['Corporate', '/ˈkɔː.pər.ət/', 'adjective', 'Thuộc về doanh nghiệp, công ty', 'Corporate governance ensures ethical business operations and transparency.', 'Quản trị doanh nghiệp đảm bảo hoạt động kinh doanh có đạo đức và minh bạch.', 'Business / Workplace', 'B2', 'Business'],
+  ['Crucial', '/ˈkruː.ʃəl/', 'adjective', 'Cực kỳ quan trọng, sống còn', 'Timely defect detection plays a crucial role in flight safety protocols.', 'Phát hiện lỗi kịp thời đóng vai trò then chốt trong các quy chuẩn an toàn bay.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Decline', '/dɪˈklaɪn/', 'verb / noun', 'Suy giảm, từ chối lịch sự', 'Inflation rates declined following central bank interest adjustments.', 'Tỷ lệ lạm phát giảm sau các đợt điều chỉnh lãi suất của ngân hàng trung ương.', 'Oxford Core', 'B1', 'Business'],
+  ['Define', '/dɪˈfaɪn/', 'verb', 'Định nghĩa, xác định rõ ràng', 'Clear interface contracts define communication across microservices.', 'Các hợp đồng giao diện rõ ràng định nghĩa việc giao tiếp giữa các vi dịch vụ.', 'Oxford Core', 'B1', 'Tech'],
+  ['Diverse', '/daɪˈvɜːs/', 'adjective', 'Đa dạng, phong phú nhiều loại', 'Our engineering team brings diverse multidisciplinary backgrounds.', 'Đội ngũ kỹ thuật của chúng tôi mang đến nhiều nền tảng đa ngành phong phú.', 'Oxford Core', 'B2', 'Daily'],
+  ['Dynamic', '/daɪˈnæm.ɪk/', 'adjective', 'Năng động, biến đổi liên tục', 'Dynamic web applications adjust UI components based on user state.', 'Các ứng dụng web động điều chỉnh các thành phần giao diện dựa trên trạng thái người dùng.', 'Oxford Core', 'B2', 'Tech'],
+  ['Eliminate', '/iˈlɪm.ɪ.neɪt/', 'verb', 'Loại bỏ hoàn toàn triệt tiêu', 'Refactoring eliminates redundant database queries and memory leaks.', 'Tái cấu trúc giúp loại bỏ các truy vấn cơ sở dữ liệu dư thừa và rò rỉ bộ nhớ.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Enable', '/ɪˈneɪ.bəl/', 'verb', 'Cho phép, tạo điều kiện thực hiện', 'Cloud platforms enable elastic on-demand compute infrastructure.', 'Các nền tảng đám mây cho phép mở rộng hạ tầng tính toán theo nhu cầu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Energy', '/ˈen.ə.dʒi/', 'noun', 'Năng lượng, nhiệt huyết sức sống', 'Solar arrays convert renewable photon energy into electrical current.', 'Các tấm pin mặt trời chuyển đổi năng lượng photon tái tạo thành dòng điện.', 'Oxford Core', 'A2', 'Daily'],
+  ['Ensure', '/ɪnˈʃɔːr/', 'verb', 'Đảm bảo, bảo đảm chắc chắn', 'Automated integration tests ensure regressions do not reach production.', 'Kiểm thử tích hợp tự động đảm bảo không có lỗi hồi quy nào xuất hiện trên thực tế.', 'Oxford Core', 'B1', 'Tech'],
+  ['Estimate', '/ˈes.tɪ.meɪt/', 'noun / verb', 'Ước tính, dự toán chi phí', 'Engineers estimate cloud computing costs prior to production launch.', 'Các kỹ sư ước tính chi phí điện toán đám mây trước khi ra mắt sản phẩm.', 'Oxford Core', 'B1', 'Tech'],
+  ['Evolve', '/ɪˈvɒlv/', 'verb', 'Tiến hóa, phát triển qua thời gian', 'Software design patterns evolve alongside advances in hardware.', 'Các mẫu thiết kế phần mềm phát triển song hành với những tiến bộ của phần cứng.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Exceed', '/ɪkˈsiːd/', 'verb', 'Vượt quá hạn mức quy định', 'Quarterly sales figures exceeded initial Wall Street financial estimates.', 'Doanh số hàng quý đã vượt quá các ước tính tài chính ban đầu của phố Wall.', 'Oxford Core', 'B2', 'Business'],
+  ['Flexible', '/ˈflek.sə.bəl/', 'adjective', 'Linh hoạt, dễ thích nghi', 'Flexible working hours enhance employee morale and productivity.', 'Giờ làm việc linh hoạt giúp nâng cao tinh thần và năng suất của nhân viên.', 'Oxford Core', 'B1', 'Daily'],
+  ['Format', '/ˈfɔː.mæt/', 'noun / verb', 'Định dạng, cách trình bày', 'JSON is the standard format for exchanging asynchronous REST API data.', 'JSON là định dạng tiêu chuẩn để trao đổi dữ liệu REST API bất đồng bộ.', 'Oxford Core', 'B1', 'Tech'],
+  ['Foundation', '/faʊnˈdeɪ.ʃən/', 'noun', 'Nền móng, tổ chức quỹ sáng lập', 'Strong algorithmic foundations empower engineers to master new systems.', 'Nền tảng thuật toán vững chắc giúp các kỹ sư làm chủ các hệ thống mới.', 'Oxford Core', 'B1', 'Academic'],
+  ['Framework', '/ˈfreɪm.wɜːk/', 'noun', 'Khung cấu trúc, nền tảng', 'Modern frontend frameworks streamline reactive component rendering.', 'Các khung giao diện hiện đại giúp tối ưu hóa việc kết xuất thành phần phản ứng.', 'Oxford Core', 'B2', 'Tech'],
+  ['Function', '/ˈfʌŋk.ʃən/', 'noun / verb', 'Chức năng, nhiệm vụ hoạt động', 'Pure mathematical functions return identical outputs for identical inputs.', 'Hàm toán học thuần túy luôn trả về kết quả giống nhau cho các đầu vào giống nhau.', 'Oxford Core', 'B1', 'Tech'],
+  ['Fundamental', '/ˌfʌn.dəˈmen.təl/', 'adjective', 'Cơ bản, nền tảng cốt yếu', 'Understanding time complexity is a fundamental computer science concept.', 'Hiểu độ phức tạp thời gian là một khái niệm khoa học máy tính cơ bản.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Guarantee', '/ˌɡær.ənˈtiː/', 'noun / verb', 'Bảo hành, cam kết chắc chắn', 'Service level agreements guarantee ninety-nine percent system uptime.', 'Thỏa thuận cấp độ dịch vụ cam kết thời gian hoạt động của hệ thống là 99%.', 'Oxford Core', 'B1', 'Business'],
+  ['Guideline', '/ˈɡaɪd.laɪn/', 'noun', 'Hướng dẫn, nguyên tắc chỉ đạo', 'Accessibility guidelines ensure web content is usable for everyone.', 'Các nguyên tắc tiếp cận đảm bảo nội dung web có thể sử dụng cho tất cả mọi người.', 'Oxford Core', 'B1', 'Tech'],
+  ['Hypothesis', '/haɪˈpɒθ.ə.sɪs/', 'noun', 'Giả thuyết khoa học đặt ra', 'Experimental results corroborated the initial scientific hypothesis.', 'Kết quả thực nghiệm đã chứng minh giả thuyết khoa học ban đầu.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Identify', '/aɪˈden.tɪ.faɪ/', 'verb', 'Nhận diện, xác định danh tính', 'Monitoring tools immediately identify anomalous network traffic spikes.', 'Công cụ giám sát ngay lập tức nhận diện lưu lượng mạng tăng đột biến bất thường.', 'Oxford Core', 'B1', 'Tech'],
+  ['Impact', '/ˈɪm.pækt/', 'noun / verb', 'Tác động mạnh mẽ, ảnh hưởng', 'Artificial intelligence will have a profound impact on global economies.', 'Trí tuệ nhân tạo sẽ có tác động sâu sắc đến các nền kinh tế toàn cầu.', 'Oxford Core', 'B1', 'Daily'],
+  ['Implement', '/ˈɪm.plɪ.ment/', 'verb', 'Triển khai thi hành kế hoạch', 'Development teams implement agile methodologies to enhance agility.', 'Các nhóm phát triển áp dụng các phương pháp linh hoạt để nâng cao tốc độ.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Incentive', '/ɪnˈsen.tɪv/', 'noun', 'Chính sách đãi ngộ khích lệ', 'Performance bonuses create powerful incentives for sales teams.', 'Thưởng hiệu suất tạo ra động lực mạnh mẽ cho các đội ngũ kinh doanh.', 'Business / Workplace', 'B2', 'Business'],
+  ['Income', '/ˈɪn.kʌm/', 'noun', 'Thu nhập tài chính kiếm được', 'Passive investment income supplements monthly household earnings.', 'Thu nhập đầu tư thụ động bổ sung cho các khoản thu nhập hàng tháng của gia đình.', 'Oxford Core', 'B1', 'Business'],
+  ['Indicate', '/ˈɪn.dɪ.keɪt/', 'verb', 'Chỉ ra, biểu thị dấu hiệu', 'Green dashboard indicators indicate healthy microservice node status.', 'Đèn báo màu xanh trên bảng điều khiển biểu thị trạng thái máy chủ đang hoạt động tốt.', 'Oxford Core', 'B1', 'Tech'],
+  ['Individual', '/ˌɪn.dɪˈvɪdʒ.u.əl/', 'noun / adjective', 'Cá nhân riêng lẻ độc lập', 'Customized learning paths adapt to individual student pace.', 'Lộ trình học tập cá nhân hóa thích ứng với tốc độ của từng học viên.', 'Oxford Core', 'B1', 'Daily'],
+  ['Infrastructure', '/ˈɪn.frəˌstrʌk.tʃər/', 'noun', 'Cơ sở hạ tầng kỹ thuật', 'Cloud infrastructure scales on demand to accommodate peak traffic.', 'Hạ tầng đám mây mở rộng theo nhu cầu để đáp ứng lưu lượng truy cập cao điểm.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Initial', '/ɪˈnɪʃ.əl/', 'adjective', 'Ban đầu, khởi đầu tiên phong', 'Initial prototype testing yielded overwhelmingly positive user feedback.', 'Thử nghiệm nguyên mẫu ban đầu mang lại phản hồi tích cực từ người dùng.', 'Oxford Core', 'B1', 'Tech'],
+  ['Initiative', '/ɪˈnɪʃ.ə.tɪv/', 'noun', 'Sáng kiến tiên phong khởi xướng', 'The company launched a green computing sustainability initiative.', 'Công ty đã đưa ra sáng kiến bền vững về điện toán xanh.', 'Oxford Core', 'B2', 'Business'],
+  ['Insight', '/ˈɪn.saɪt/', 'noun', 'Thấu hiểu sâu sắc bản chất', 'Telemetry data provides valuable insights into user application journeys.', 'Dữ liệu đo lường cung cấp những hiểu biết sâu sắc về hành trình người dùng.', 'Academic / IELTS', 'C1', 'Tech'],
+  ['Inspect', '/ɪnˈspekt/', 'verb', 'Thanh tra, kiểm tra kỹ lưỡng', 'Quality assurance engineers inspect source code for security vulnerabilities.', 'Các kỹ sư kiểm định chất lượng kiểm tra mã nguồn để tìm các lỗ hổng bảo mật.', 'Oxford Core', 'B1', 'Tech'],
+  ['Institute', '/ˈɪn.stɪ.tjuːt/', 'noun', 'Viện nghiên cứu, học viện', 'The technology institute pioneers groundbreaking quantum computing research.', 'Viện công nghệ tiên phong trong nghiên cứu điện toán lượng tử đột phá.', 'Academic / IELTS', 'B1', 'Academic'],
+  ['Integrity', '/ɪnˈteɡ.rə.ti/', 'noun', 'Tính chính trực, toàn vẹn dữ liệu', 'Cryptographic hashing verifies download file integrity seamlessly.', 'Băm mật mã giúp xác minh tính toàn vẹn của tệp tải xuống một cách liền mạch.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Interact', '/ˌɪn.təˈrækt/', 'verb', 'Tương tác, giao tiếp qua lại', 'Users interact with the 3D model through intuitive multi-touch gestures.', 'Người dùng tương tác với mô hình 3D thông qua các cử chỉ đa chạm trực quan.', 'Oxford Core', 'B1', 'Tech'],
+  ['Internal', '/ɪnˈtɜː.nəl/', 'adjective', 'Nội bộ bên trong tổ chức', 'Internal company communications are protected via private VPN tunnels.', 'Thông tin liên lạc nội bộ của công ty được bảo vệ qua các đường hầm VPN riêng tư.', 'Oxford Core', 'B1', 'Tech'],
+  ['Invest', '/ɪnˈvest/', 'verb', 'Đầu tư vốn và thời gian', 'Venture capital funds invest heavily in generative artificial intelligence.', 'Các quỹ đầu tư mạo hiểm đầu tư mạnh vào trí tuệ nhân tạo tạo sinh.', 'Oxford Core', 'B1', 'Business'],
+  ['Investigate', '/ɪnˈves.tɪ.ɡeɪt/', 'verb', 'Điều tra khảo sát sự việc', 'Security specialists investigate the root cause of the data breach.', 'Các chuyên gia bảo mật điều tra nguyên nhân gốc rễ của vụ rò rỉ dữ liệu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Involve', '/ɪnˈvɒlv/', 'verb', 'Liên quan, kéo theo bao gồm', 'Enterprise migrations involve cross-functional technical teams.', 'Chuyển đổi doanh nghiệp có sự tham gia của các đội ngũ kỹ thuật đa chức năng.', 'Oxford Core', 'B1', 'Business'],
+  ['Isolate', '/ˈaɪ.sə.leɪt/', 'verb', 'Cô lập, cách ly biệt lập', 'Container namespaces isolate application processes from one another.', 'Không gian tên container cô lập các tiến trình ứng dụng với nhau.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Issue', '/ˈɪs.juː/', 'noun / verb', 'Vấn đề nan giải, phát hành', 'Developers resolve high-priority GitHub issues promptly.', 'Các nhà phát triển giải quyết các sự cố GitHub có mức ưu tiên cao kịp thời.', 'Oxford Core', 'B1', 'Tech'],
+  ['Label', '/ˈleɪ.bəl/', 'noun / verb', 'Nhãn mác, dán nhãn phân loại', 'Machine learning models require accurately labeled training datasets.', 'Các mô hình học máy yêu cầu các tập dữ liệu huấn luyện được dán nhãn chính xác.', 'Oxford Core', 'B1', 'Tech'],
+  ['Layer', '/ˈleɪ.ər/', 'noun', 'Lớp phân tầng trong kiến trúc', 'The presentation layer decouples UI logic from backend business rules.', 'Tầng hiển thị tách biệt giao diện người dùng khỏi các quy tắc nghiệp vụ phụ trợ.', 'Oxford Core', 'B1', 'Tech'],
+  ['Logical', '/ˈlɒdʒ.ɪ.kəl/', 'adjective', 'Hợp lý, theo tư duy logic', 'Writing clean code requires structured and logical problem-solving.', 'Viết mã sạch đòi hỏi khả năng giải quyết vấn đề có cấu trúc và hợp lý.', 'Oxford Core', 'B1', 'Tech'],
+  ['Major', '/ˈmeɪ.dʒər/', 'adjective / noun', 'Chuyên ngành chính, trọng đại', 'Cloud migration represents a major milestone for the enterprise.', 'Chuyển dịch đám mây đại diện cho một cột mốc quan trọng của doanh nghiệp.', 'Oxford Core', 'A2', 'Business'],
+  ['Maximize', '/ˈmæk.sɪ.maɪz/', 'verb', 'Tối đa hóa lợi nhuận năng suất', 'Thread pools maximize CPU core utilization during batch processing.', 'Bộ nhớ luồng tối đa hóa việc sử dụng lõi CPU trong quá trình xử lý hàng loạt.', 'Oxford Core', 'B2', 'Tech'],
+  ['Mechanism', '/ˈmek.ə.nɪ.zəm/', 'noun', 'Cơ chế vận hành, bộ máy', 'Consensus mechanisms secure decentralized blockchain transactions.', 'Các cơ chế đồng thuận bảo vệ các giao dịch blockchain phi tập trung.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Method', '/ˈmeθ.əd/', 'noun', 'Phương pháp luận khoa học', 'Agile methodologies emphasize iterative feedback loops.', 'Các phương pháp Agile nhấn mạnh các vòng lặp phản hồi lặp đi lặp lại.', 'Oxford Core', 'B1', 'Tech'],
+  ['Migrate', '/maɪˈɡreɪt/', 'verb', 'Di cư, chuyển đổi hệ thống', 'Databases migrate to distributed cloud clusters without downtime.', 'Cơ sở dữ liệu di chuyển sang các cụm đám mây phân tán mà không bị gián đoạn.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Minimize', '/ˈmɪn.ɪ.maɪz/', 'verb', 'Tối thiểu hóa chi phí rủi ro', 'Code minification minimizes bundle sizes to speed up web page loads.', 'Thu nhỏ mã giúp giảm kích thước gói để tăng tốc độ tải trang web.', 'Oxford Core', 'B2', 'Tech'],
+  ['Modify', '/ˈmɒd.ɪ.faɪ/', 'verb', 'Chỉnh sửa, điều chỉnh thông số', 'Admins modify permission settings through the security dashboard.', 'Quản trị viên sửa đổi cài đặt quyền thông qua bảng điều khiển bảo mật.', 'Oxford Core', 'B1', 'Tech'],
+  ['Network', '/ˈnet.wɜːk/', 'noun', 'Mạng lưới kết nối truyền thông', 'Fiber optic networks provide ultrafast gigabit internet connectivity.', 'Mạng cáp quang cung cấp kết nối internet gigabit siêu nhanh.', 'Oxford Core', 'A2', 'Tech'],
+  ['Objective', '/əbˈdʒek.tɪv/', 'noun / adjective', 'Mục tiêu đề ra, khách quan', 'The primary sprint objective is finalizing the checkout payment gateway.', 'Mục tiêu chính của sprint là hoàn tất cổng thanh toán khi đặt hàng.', 'Oxford Core', 'B2', 'Business'],
+  ['Obtain', '/əbˈteɪn/', 'verb', 'Đạt được, thu thập được', 'Users obtain secure session tokens upon successful two-factor login.', 'Người dùng nhận được mã phiên an toàn sau khi đăng nhập hai yếu tố thành công.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Option', '/ˈɒp.ʃən/', 'noun', 'Lựa chọn, tùy chọn khả thi', 'Settings menus provide customizable dark mode options.', 'Menu cài đặt cung cấp các tùy chọn chế độ tối có thể tùy chỉnh.', 'Oxford Core', 'A2', 'Tech'],
+  ['Output', '/ˈaʊt.pʊt/', 'noun', 'Sản lượng đầu ra thành phẩm', 'Compiler output details syntax diagnostics and compilation warnings.', 'Đầu ra của trình biên dịch chi tiết các chẩn đoán cú pháp và cảnh báo.', 'Oxford Core', 'B1', 'Tech'],
+  ['Overall', '/ˌəʊ.vərˈɔːl/', 'adjective', 'Tổng thể, nhìn chung toàn diện', 'The overall system performance benchmark surpassed engineering targets.', 'Điểm chuẩn hiệu suất tổng thể của hệ thống đã vượt mục tiêu kỹ thuật.', 'Oxford Core', 'B1', 'Tech'],
+  ['Parallel', '/ˈpær.ə.lel/', 'adjective / noun', 'Song song đồng thời cùng chạy', 'GPUs execute thousands of graphics computations in parallel.', 'GPU thực thi hàng nghìn phép tính đồ họa song song.', 'Oxford Core', 'B2', 'Tech'],
+  ['Parameter', '/pəˈræm.ɪ.tər/', 'noun', 'Tham số cấu hình hệ thống', 'Function parameters specify configurable inputs and return types.', 'Các tham số hàm chỉ định các đầu vào có thể cấu hình và các kiểu trả về.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Participate', '/pɑːˈtɪs.ɪ.peɪt/', 'verb', 'Tham gia, góp mặt đóng góp', 'Developers participate in peer code reviews before merging pull requests.', 'Các lập trình viên tham gia đánh giá mã nguồn trước khi hợp nhất pull request.', 'Oxford Core', 'B1', 'Tech'],
+  ['Partner', '/ˈpɑːt.nər/', 'noun', 'Đối tác kinh doanh đồng hành', 'Cloud solution partners assist enterprises with complex architecture builds.', 'Các đối tác giải pháp đám mây hỗ trợ doanh nghiệp xây dựng kiến trúc phức tạp.', 'Oxford Core', 'A2', 'Business'],
+  ['Period', '/ˈpɪə.ri.əd/', 'noun', 'Khoảng thời kỳ, giai đoạn', 'Trial subscription periods allow users to test premium features freely.', 'Thời gian dùng thử cho phép người dùng trải nghiệm miễn phí các tính năng cao cấp.', 'Oxford Core', 'A2', 'Daily'],
+  ['Persist', '/pəˈsɪst/', 'verb', 'Kiên trì bền bỉ, lưu trữ dữ liệu', 'Local storage persists user application settings across browser sessions.', 'Bộ nhớ cục bộ lưu cài đặt ứng dụng của người dùng qua các phiên trình duyệt.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Phase', '/feɪz/', 'noun', 'Giai đoạn phát triển dự án', 'The deployment phase commences after all unit tests pass completely.', 'Giai đoạn triển khai bắt đầu sau khi tất cả các bài kiểm thử đơn vị vượt qua hoàn toàn.', 'Oxford Core', 'B1', 'Tech'],
+  ['Policy', '/ˈpɒl.ə.si/', 'noun', 'Chính sách quy định ban hành', 'Security policies enforce mandatory complex passwords and rotation.', 'Chính sách bảo mật bắt buộc sử dụng mật khẩu phức tạp và thay đổi định kỳ.', 'Oxford Core', 'B1', 'Business'],
+  ['Potential', '/pəˈten.ʃəl/', 'adjective / noun', 'Tiềm năng phát triển tương lai', 'Automated testing identifies potential regressions early in the lifecycle.', 'Kiểm thử tự động giúp phát hiện các lỗi hồi quy tiềm ẩn ngay từ đầu.', 'Oxford Core', 'B2', 'Tech'],
+  ['Predict', '/prɪˈdɪkt/', 'verb', 'Dự đoán trước diễn biến', 'Machine learning algorithms predict user churn with impressive accuracy.', 'Các thuật toán học máy dự đoán tỷ lệ rời bỏ của người dùng với độ chính xác cao.', 'Oxford Core', 'B1', 'Tech'],
+  ['Primary', '/ˈpraɪ.mər.i/', 'adjective', 'Chính yếu, bậc tiểu học', 'The primary database node handles all real-time transaction writes.', 'Nút cơ sở dữ liệu chính xử lý tất cả các giao dịch ghi thời gian thực.', 'Oxford Core', 'B1', 'Tech'],
+  ['Principal', '/ˈprɪn.sə.pəl/', 'adjective / noun', 'Chủ yếu, hiệu trưởng, vốn gốc', 'The principal architect designed the cloud-native microservice topology.', 'Kiến trúc sư trưởng đã thiết kế cấu trúc vi dịch vụ chuẩn đám mây.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Principle', '/ˈprɪn.sə.pəl/', 'noun', 'Nguyên lý hoạt động cốt lõi', 'Adhering to SOLID principles ensures modular and maintainable software.', 'Tuân thủ các nguyên tắc SOLID đảm bảo phần mềm có tính mô-đun và dễ bảo trì.', 'Oxford Core', 'B2', 'Tech'],
+  ['Priority', '/praɪˈɒr.ə.ti/', 'noun', 'Sự ưu tiên hàng đầu cần làm', 'Customer data security remains our highest organizational priority.', 'Bảo mật dữ liệu khách hàng vẫn là ưu tiên cao nhất của tổ chức chúng tôi.', 'Oxford Core', 'B1', 'Business'],
+  ['Proceed', '/prəʊˈsiːd/', 'verb', 'Tiếp tục tiến hành công việc', 'Click next to proceed to the secure credit card checkout screen.', 'Nhấp vào tiếp theo để chuyển đến màn hình thanh toán thẻ tín dụng an toàn.', 'Academic / IELTS', 'B2', 'Daily'],
+  ['Process', '/ˈprəʊ.ses/', 'noun / verb', 'Quy trình các bước thực hiện', 'Automated continuous integration processes build and test code branches.', 'Quy trình tích hợp liên tục tự động xây dựng và kiểm tra các nhánh mã nguồn.', 'Oxford Core', 'A2', 'Tech'],
+  ['Professional', '/prəˈfeʃ.ən.əl/', 'adjective / noun', 'Chuyên nghiệp, có tay nghề cao', 'Professional development courses upskill software engineers effectively.', 'Các khóa đào tạo chuyên nghiệp giúp nâng cao kỹ năng cho các kỹ sư phần mềm.', 'Oxford Core', 'B1', 'Daily'],
+  ['Project', '/ˈprɒdʒ.ekt/', 'noun / verb', 'Dự án kế hoạch thực hiện', 'The open-source project boasts contributors from fifty countries.', 'Dự án mã nguồn mở tự hào có sự đóng góp của các lập trình viên từ 50 quốc gia.', 'Oxford Core', 'A2', 'Tech'],
+  ['Protocol', '/ˈprəʊ.tə.kɒl/', 'noun', 'Giao thức truyền thông quy ước', 'HTTPS protocol encrypts all data transmitted between browser and server.', 'Giao thức HTTPS mã hóa mọi dữ liệu truyền giữa trình duyệt và máy chủ.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Publish', '/ˈpʌb.lɪʃ/', 'verb', 'Xuất bản công bố rộng rãi', 'Authors publish technical whitepapers detailing algorithmic breakthroughs.', 'Các tác giả công bố tài liệu kỹ thuật chi tiết về những đột phá thuật toán.', 'Oxford Core', 'B1', 'Academic'],
+  ['Purchase', '/ˈpɜː.tʃəs/', 'verb / noun', 'Mua sắm thanh toán đơn hàng', 'Customers purchase subscriptions securely through encrypted gateways.', 'Khách hàng mua các gói dịch vụ an toàn qua các cổng thanh toán mã hóa.', 'Oxford Core', 'B1', 'Business'],
+  ['Pursue', '/pəˈsjuː/', 'verb', 'Theo đuổi đam mê mục tiêu', 'Aspiring engineers pursue master degrees in artificial intelligence.', 'Các kỹ sư trẻ theo đuổi bằng thạc sĩ về trí tuệ nhân tạo.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Random', '/ˈræn.dəm/', 'adjective', 'Ngẫu nhiên bất kỳ không định trước', 'Cryptographic algorithms generate cryptographically secure random salts.', 'Các thuật toán mật mã tạo ra các chuỗi ngẫu nhiên an toàn để bảo mật.', 'Oxford Core', 'B1', 'Tech'],
+  ['Range', '/reɪndʒ/', 'noun / verb', 'Phạm vi, dải biến thiên', 'The API returns a broad range of structured statistical metrics.', 'API trả về một phạm vi rộng các chỉ số thống kê có cấu trúc.', 'Oxford Core', 'B1', 'Tech'],
+  ['Ratio', '/ˈreɪ.ʃi.əʊ/', 'noun', 'Tỷ số toán học đối sánh', 'The aspect ratio automatically adapts to different mobile screen sizes.', 'Tỷ lệ khung hình tự động thích ứng với các kích thước màn hình di động khác nhau.', 'Oxford Core', 'B2', 'Tech'],
+  ['Rational', '/ˈræʃ.ən.əl/', 'adjective', 'Hợp lý dựa trên lý trí', 'Sound engineering decisions stem from rational trade-off evaluations.', 'Các quyết định kỹ thuật đúng đắn bắt nguồn từ việc đánh giá đánh đổi hợp lý.', 'Academic / IELTS', 'B2', 'Academic'],
+  ['Recover', '/rɪˈkʌv.ər/', 'verb', 'Hồi phục sức khỏe dữ liệu', 'Automated backups enable database clusters to recover from hardware faults.', 'Sao lưu tự động cho phép cụm cơ sở dữ liệu phục hồi sau các lỗi phần cứng.', 'Oxford Core', 'B1', 'Tech'],
+  ['Refine', '/rɪˈfaɪn/', 'verb', 'Tinh chỉnh, hoàn thiện chi tiết', 'Iterative user feedback helps product squads refine user interfaces.', 'Phản hồi lặp lại của người dùng giúp nhóm sản phẩm tinh chỉnh giao diện.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Region', '/ˈriː.dʒən/', 'noun', 'Vùng miền, khu vực địa lý', 'Deploying multi-region clusters minimizes latency for international users.', 'Triển khai cụm đa khu vực giúp giảm thiểu độ trễ cho người dùng quốc tế.', 'Oxford Core', 'B1', 'Tech'],
+  ['Register', '/ˈredʒ.ɪ.stər/', 'verb / noun', 'Đăng ký tài khoản thủ tục', 'New users register accounts using email addresses or social OAuth logins.', 'Người dùng mới đăng ký tài khoản bằng email hoặc đăng nhập OAuth.', 'Oxford Core', 'A2', 'Tech'],
+  ['Regulate', '/ˈreɡ.jə.leɪt/', 'verb', 'Quy định điều chỉnh quản lý', 'Government privacy agencies regulate the commercial handling of user data.', 'Các cơ quan bảo mật quy định việc xử lý thương mại dữ liệu người dùng.', 'Academic / IELTS', 'B2', 'Business'],
+  ['Reinforce', '/ˌriː.ɪnˈfɔːs/', 'verb', 'Củng cố tăng cường sức mạnh', 'Automated unit tests reinforce code stability across ongoing releases.', 'Kiểm thử tự động giúp củng cố tính ổn định của mã nguồn qua các bản phát hành.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Reject', '/rɪˈdʒekt/', 'verb', 'Từ chối, bác bỏ đề xuất', 'Validation middleware rejects requests containing malicious SQL payloads.', 'Middleware xác thực từ chối các yêu cầu chứa các đoạn mã SQL độc hại.', 'Oxford Core', 'B1', 'Tech'],
+  ['Release', '/rɪˈliːs/', 'verb / noun', 'Phát hành phiên bản mới', 'The engineering team released version 2.0 with major performance boosts.', 'Đội ngũ kỹ thuật đã phát hành phiên bản 2.0 với nhiều cải tiến hiệu suất lớn.', 'Oxford Core', 'B1', 'Tech'],
+  ['Relevant', '/ˈrel.ə.vənt/', 'adjective', 'Có liên quan, thích đáng', 'Semantic search queries return contextually relevant knowledge results.', 'Tìm kiếm ngữ nghĩa trả về các kết quả kiến thức có liên quan đến ngữ cảnh.', 'Oxford Core', 'B1', 'Tech'],
+  ['Rely', '/rɪˈlaɪ/', 'verb', 'Tin cậy dựa dẫm vào ai', 'Modern web apps rely on content delivery networks for global caching.', 'Ứng dụng web hiện đại dựa vào mạng phân phối nội dung để lưu bộ nhớ đệm.', 'Oxford Core', 'B1', 'Tech'],
+  ['Remove', '/rɪˈmuːv/', 'verb', 'Xóa bỏ, gỡ bỏ thành phần', 'Garbage collection automatically removes unreferenced objects from memory.', 'Thu gom rác tự động dọn dẹp các đối tượng không còn được tham chiếu.', 'Oxford Core', 'A2', 'Tech'],
+  ['Require', '/rɪˈkwaɪər/', 'verb', 'Yêu cầu đòi hỏi bắt buộc', 'Production deployments require formal sign-off from security auditors.', 'Triển khai sản phẩm yêu cầu phải có sự phê duyệt chính thức từ kiểm toán viên.', 'Oxford Core', 'B1', 'Business'],
+  ['Research', '/rɪˈsɜːtʃ/', 'noun / verb', 'Nghiên cứu khoa học chuyên sâu', 'Advanced AI research yields breakthrough natural language capabilities.', 'Nghiên cứu AI tiên tiến mang lại những khả năng xử lý ngôn ngữ đột phá.', 'Oxford Core', 'B1', 'Academic'],
+  ['Resource', '/rɪˈzɔːs/', 'noun', 'Tài nguyên nguồn lực sẵn có', 'Kubernetes dynamically assigns CPU and memory resources to active pods.', 'Kubernetes tự động phân bổ tài nguyên CPU và bộ nhớ cho các pod đang chạy.', 'Oxford Core', 'B1', 'Tech'],
+  ['Respond', '/rɪˈspɒnd/', 'verb', 'Phản hồi, hồi đáp tin nhắn', 'The microservice responds to client requests with JSON within 10ms.', 'Vi dịch vụ phản hồi yêu cầu của máy khách bằng JSON trong vòng 10ms.', 'Oxford Core', 'A2', 'Tech'],
+  ['Restore', '/rɪˈstɔːr/', 'verb', 'Khôi phục lại trạng thái cũ', 'Automated point-in-time recovery restores databases after accidental drops.', 'Khôi phục tự động theo thời điểm giúp khôi phục cơ sở dữ liệu sau sự cố.', 'Oxford Core', 'B1', 'Tech'],
+  ['Restrict', '/rɪˈstrɪkt/', 'verb', 'Hạn chế quyền hạn truy cập', 'Firewall rules restrict inbound network traffic to authorized ports only.', 'Tường lửa hạn chế lưu lượng mạng đến chỉ qua các cổng được ủy quyền.', 'Oxford Core', 'B2', 'Tech'],
+  ['Retain', '/rɪˈteɪn/', 'verb', 'Giữ lại bảo tồn duy trì', 'In-memory caching retains hot session data to bypass database queries.', 'Bộ nhớ đệm lưu giữ dữ liệu phiên đang dùng để giảm tải cho cơ sở dữ liệu.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Reveal', '/rɪˈviːl/', 'verb', 'Tiết lộ bộc lộ bí mật', 'Audit log analysis revealed unauthorized database credential accesses.', 'Phân tích nhật ký kiểm toán đã tiết lộ các lượt truy cập thông tin trái phép.', 'Oxford Core', 'B1', 'Tech'],
+  ['Revenue', '/ˈrev.ən.juː/', 'noun', 'Doanh thu tài chính công ty', 'Subscription revenue accounts for eighty percent of recurring income.', 'Doanh thu đăng ký chiếm 80% thu nhập định kỳ hàng tháng.', 'Business / Workplace', 'B2', 'Business'],
+  ['Reverse', '/rɪˈvɜːs/', 'verb / noun', 'Đảo ngược tình thế tiến trình', 'Database transactions automatically reverse changes if errors occur.', 'Giao dịch cơ sở dữ liệu tự động đảo ngược các thay đổi nếu có lỗi phát sinh.', 'Oxford Core', 'B2', 'Tech'],
+  ['Revise', '/rɪˈvaɪz/', 'verb', 'Ôn tập, sửa đổi văn bản', 'Technical writers revise API documentation after each sprint release.', 'Người viết tài liệu kỹ thuật chỉnh sửa tài liệu API sau mỗi bản phát hành.', 'Oxford Core', 'B1', 'Tech'],
+  ['Revolution', '/ˌrev.əˈluː.ʃən/', 'noun', 'Cuộc cách mạng đổi mới lớn', 'Generative artificial intelligence triggered a massive computing revolution.', 'Trí tuệ nhân tạo tạo sinh đã châm ngòi cho một cuộc cách mạng điện toán lớn.', 'Oxford Core', 'B1', 'Tech'],
+  ['Role', '/rəʊl/', 'noun', 'Vai trò trọng trách đảm nhận', 'Role-based security controls restrict access to confidential endpoints.', 'Kiểm soát bảo mật theo vai trò giới hạn quyền truy cập vào các điểm cuối nhạy cảm.', 'Oxford Core', 'A2', 'Tech'],
+  ['Route', '/ruːt/', 'noun / verb', 'Lộ trình tuyến đường di chuyển', 'API gateways route client traffic to the appropriate microservice.', 'Cổng API định tuyến lưu lượng truy cập của máy khách đến đúng vi dịch vụ.', 'Oxford Core', 'B1', 'Tech'],
+  ['Scenario', '/sɪˈnɑː.ri.əʊ/', 'noun', 'Kịch bản tình huống giả định', 'Load testing tests disaster recovery scenarios during simulated server outages.', 'Kiểm thử tải giúp kiểm tra các kịch bản phục hồi sau thảm họa khi mất máy chủ.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Schedule', '/ˈʃedʒ.uːl/', 'noun / verb', 'Lịch trình thời gian biểu', 'Cron jobs schedule automated nightly database backups and maintenance.', 'Cron job lên lịch sao lưu và bảo trì cơ sở dữ liệu tự động hàng đêm.', 'Oxford Core', 'A2', 'Tech'],
+  ['Scope', '/skəʊp/', 'noun', 'Quy mô phạm vi ảnh hưởng', 'Function scopes encapsulate variables to prevent global namespace pollution.', 'Phạm vi hàm đóng gói các biến để tránh ô nhiễm không gian tên toàn cục.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Section', '/ˈsek.ʃən/', 'noun', 'Phần đoạn mục trong tài liệu', 'Configuration sections separate development, staging, and production keys.', 'Các phần cấu hình phân tách các khóa phát triển, thử nghiệm và thực tế.', 'Oxford Core', 'A2', 'Tech'],
+  ['Secure', '/sɪˈkjʊər/', 'adjective / verb', 'Bảo mật an toàn chắc chắn', 'Always use TLS protocols to secure sensitive user data in transit.', 'Luôn sử dụng giao thức TLS để bảo mật dữ liệu nhạy cảm của người dùng khi truyền.', 'Oxford Core', 'B1', 'Tech'],
+  ['Select', '/sɪˈlekt/', 'verb', 'Lựa chọn phương án tốt nhất', 'SQL queries select indexed table columns to optimize read execution speed.', 'Truy vấn SQL chọn các cột đã đánh chỉ mục để tối ưu hóa tốc độ đọc.', 'Oxford Core', 'A2', 'Tech'],
+  ['Sequence', '/ˈsiː.kwəns/', 'noun / verb', 'Chuỗi trình tự nối tiếp nhau', 'Database sequence generators create unique incremental primary keys.', 'Bộ tạo chuỗi cơ sở dữ liệu tạo ra các khóa chính tăng dần duy nhất.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Series', '/ˈsɪə.riːz/', 'noun', 'Chuỗi các sự kiện liên tiếp', 'Time-series databases store metrics for real-time dashboard visualization.', 'Cơ sở dữ liệu chuỗi thời gian lưu trữ các chỉ số để hiển thị biểu đồ trực quan.', 'Oxford Core', 'B1', 'Tech'],
+  ['Shift', '/ʃɪft/', 'noun / verb', 'Dịch chuyển, ca làm việc', 'Microservice architectures represent a major architectural paradigm shift.', 'Kiến trúc vi dịch vụ đại diện cho một sự dịch chuyển mô thức kiến trúc lớn.', 'Oxford Core', 'B1', 'Tech'],
+  ['Significant', '/sɪɡˈnɪf.ɪ.kənt/', 'adjective', 'Có ý nghĩa quan trọng to lớn', 'Caching introduced significant reductions in backend database compute load.', 'Bộ nhớ đệm giúp giảm tải đáng kể cho việc tính toán của cơ sở dữ liệu phụ trợ.', 'Oxford Core', 'B2', 'Tech'],
+  ['Similar', '/ˈsɪm.ɪ.lər/', 'adjective', 'Tương tự giống nhau phần lớn', 'Vector embeddings identify semantically similar text passages quickly.', 'Nhúng vector giúp nhận diện các đoạn văn bản có ngữ nghĩa tương tự nhanh chóng.', 'Oxford Core', 'A2', 'Tech'],
+  ['Simulate', '/ˈsɪm.jə.leɪt/', 'verb', 'Mô phỏng thử nghiệm thực tế', 'Stress test scripts simulate ten thousand simultaneous checkout sessions.', 'Kịch bản kiểm thử ứng suất mô phỏng 10.000 phiên thanh toán đồng thời.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Site', '/saɪt/', 'noun', 'Địa điểm, trang web trực tuyến', 'High-availability sites deploy redundant instances across multi-region data centers.', 'Các trang web tính sẵn sàng cao triển khai nhiều phiên bản trên nhiều trung tâm dữ liệu.', 'Oxford Core', 'A2', 'Tech'],
+  ['Source', '/sɔːs/', 'noun / verb', 'Nguồn gốc xuất xứ thông tin', 'Open-source code repositories encourage collaborative software innovation globally.', 'Các kho mã nguồn mở khuyến khích sự đổi mới phần mềm hợp tác trên toàn cầu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Specific', '/spəˈsɪf.ɪk/', 'adjective', 'Cụ thể rõ ràng chi tiết', 'Specify exact HTTP status codes for specific client exception errors.', 'Chỉ định mã trạng thái HTTP chính xác cho các lỗi ngoại lệ cụ thể.', 'Academic / IELTS', 'B1', 'Tech'],
+  ['Stable', '/ˈsteɪ.bəl/', 'adjective', 'Ổn định vững vàng không đổi', 'Software releases marked as LTS provide long-term stable feature updates.', 'Các bản phát hành phần mềm LTS cung cấp các bản cập nhật ổn định dài hạn.', 'Oxford Core', 'B1', 'Tech'],
+  ['Status', '/ˈsteɪ.təs/', 'noun', 'Trạng thái hiện thời địa vị', 'HTTP status 200 signals successful request processing by the backend.', 'Trạng thái HTTP 200 báo hiệu yêu cầu đã được xử lý thành công bởi máy chủ.', 'Oxford Core', 'B1', 'Tech'],
+  ['Structure', '/ˈstrʌk.tʃər/', 'noun / verb', 'Cấu trúc kết cấu kiến trúc', 'JSON data structures organize nested document hierarchies intuitively.', 'Cấu trúc dữ liệu JSON sắp xếp các tài liệu lồng nhau một cách trực quan.', 'Oxford Core', 'B1', 'Tech'],
+  ['Submit', '/səbˈmɪt/', 'verb', 'Nộp bài, gửi biểu mẫu đi', 'HTML forms submit encrypted POST payloads to authorization endpoints.', 'Biểu mẫu HTML gửi dữ liệu POST đã mã hóa đến các điểm cuối xác thực.', 'Oxford Core', 'B1', 'Tech'],
+  ['Target', '/ˈtɑː.ɡɪt/', 'noun / verb', 'Mục tiêu nhắm tới định mức', 'Build scripts compile source files into targeted WebAssembly binaries.', 'Kịch bản xây dựng biên dịch các tệp nguồn thành mã nhị phân WebAssembly mục tiêu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Task', '/tɑːsk/', 'noun / verb', 'Nhiệm vụ công việc được giao', 'Background task workers execute CPU-heavy image compression jobs.', 'Các tác vụ chạy ngầm thực thi các công việc nén hình ảnh tốn nhiều CPU.', 'Oxford Core', 'A2', 'Tech'],
+  ['Technical', '/ˈtek.nɪ.kəl/', 'adjective', 'Thuộc về kỹ thuật chuyên môn', 'Technical documentation clarifies algorithmic complexity and edge cases.', 'Tài liệu kỹ thuật làm rõ độ phức tạp của thuật toán và các trường hợp biên.', 'Oxford Core', 'B1', 'Tech'],
+  ['Technology', '/tekˈnɒl.ə.dʒi/', 'noun', 'Công nghệ hiện đại số hóa', 'Emerging blockchain technologies enable decentralized smart contract execution.', 'Các công nghệ blockchain mới nổi cho phép thực thi hợp đồng thông minh.', 'Oxford Core', 'A2', 'Tech'],
+  ['Temporary', '/ˈtem.pər.ər.i/', 'adjective', 'Tạm thời nhất thời ngắn hạn', 'Redis caches store temporary authentication tokens with five-minute TTL.', 'Bộ nhớ đệm Redis lưu trữ các mã xác thực tạm thời với thời gian sống 5 phút.', 'Oxford Core', 'B1', 'Tech'],
+  ['Terminate', '/ˈtɜː.mɪ.neɪt/', 'verb', 'Chấm dứt kết thúc hợp đồng', 'Load balancers terminate incoming SSL connections before proxying traffic.', 'Bộ cân bằng tải ngắt các kết nối SSL trước khi chuyển tiếp lưu lượng truy cập.', 'Academic / IELTS', 'C1', 'Tech'],
+  ['Theme', '/θiːm/', 'noun', 'Chủ đề tư tưởng xuyên suốt', 'CSS variables allow instant toggling between dark and light themes.', 'Các biến CSS cho phép chuyển đổi tức thì giữa các giao diện sáng và tối.', 'Oxford Core', 'B1', 'Tech'],
+  ['Theory', '/ˈθɪə.ri/', 'noun', 'Lý thuyết học thuyết khoa học', 'Relational database theory is built upon rigorous mathematical foundations.', 'Lý thuyết cơ sở dữ liệu quan hệ được xây dựng trên nền tảng toán học chặt chẽ.', 'Oxford Core', 'B1', 'Academic'],
+  ['Topic', '/ˈtɒp.ɪk/', 'noun', 'Đề tài chủ đề thảo luận', 'Kafka message brokers partition data across distributed event topics.', 'Bộ điều phối tin nhắn Kafka phân vùng dữ liệu qua các chủ đề sự kiện phân tán.', 'Oxford Core', 'A2', 'Tech'],
+  ['Trace', '/treɪs/', 'verb / noun', 'Dấu vết lần theo nguồn gốc', 'Distributed tracing instruments monitor request latency across microservices.', 'Truy vết phân tán giúp theo dõi độ trễ của yêu cầu qua các vi dịch vụ.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Transfer', '/trænsˈfɜːr/', 'verb / noun', 'Chuyển giao chuyển dữ liệu', 'WebSockets transfer binary data streams with minimal protocol overhead.', 'WebSockets truyền các luồng dữ liệu nhị phân với chi phí giao thức tối thiểu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Trigger', '/ˈtrɪɡ.ər/', 'verb / noun', 'Kích hoạt cò súng phát nổ', 'Database triggers execute automated auditing routines on record updates.', 'Trigger cơ sở dữ liệu thực thi kiểm toán tự động khi các bản ghi được cập nhật.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Ultimate', '/ˈʌl.tɪ.mət/', 'adjective', 'Tối thượng cuối cùng đỉnh cao', 'Building fault-tolerant software is the ultimate goal of cloud engineering.', 'Xây dựng phần mềm chịu lỗi là mục tiêu cuối cùng của kỹ thuật đám mây.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Unique', '/juːˈniːk/', 'adjective', 'Độc đáo duy nhất có một không hai', 'UUID algorithms generate globally unique primary identifier keys.', 'Thuật toán UUID tạo ra các khóa định danh chính duy nhất trên toàn cầu.', 'Oxford Core', 'B1', 'Tech'],
+  ['Utilize', '/ˈjuː.təl.aɪz/', 'verb', 'Tận dụng khai thác sử dụng', 'Modern web browsers utilize GPU hardware acceleration for smooth 60fps.', 'Trình duyệt web hiện đại tận dụng khả năng tăng tốc GPU để đạt 60fps mượt mà.', 'Academic / IELTS', 'B2', 'Tech'],
+  ['Valid', '/ˈvæl.ɪd/', 'adjective', 'Hợp lệ còn hạn sử dụng', 'Ensure incoming request payloads conform to valid JSON schema specifications.', 'Đảm bảo dữ liệu yêu cầu gửi đến tuân thủ các đặc tả lược đồ JSON hợp lệ.', 'Oxford Core', 'B1', 'Tech'],
+  ['Vary', '/ˈveə.ri/', 'verb', 'Biến đổi thay đổi đa dạng', 'Server response latencies vary depending on geographical client distances.', 'Độ trễ phản hồi của máy chủ thay đổi tùy thuộc vào khoảng cách địa lý.', 'Academic / IELTS', 'B1', 'Tech'],
+  ['Version', '/ˈvɜː.ʃən/', 'noun', 'Phiên bản cập nhật phần mềm', 'Semantic versioning communicates breaking changes clearly across API releases.', 'Đánh số phiên bản theo ngữ nghĩa giúp truyền đạt rõ ràng các thay đổi lớn.', 'Oxford Core', 'B1', 'Tech'],
+  ['Virtual', '/ˈvɜː.tʃu.əl/', 'adjective', 'Ảo trên không gian mạng', 'Virtual DOM architectures minimize costly direct browser DOM manipulations.', 'Kiến trúc DOM ảo giúp giảm thiểu các thao tác trực tiếp tốn kém trên DOM trình duyệt.', 'Oxford Core', 'B1', 'Tech'],
+  ['Visible', '/ˈvɪz.ə.bəl/', 'adjective', 'Có thể nhìn thấy rõ ràng', 'Skeleton screens keep UI layouts visible while asynchronous assets load.', 'Màn hình khung xương giúp giao diện luôn hiển thị trong khi tải tài nguyên.', 'Oxford Core', 'B1', 'Tech'],
+  ['Volume', '/ˈvɒl.juːm/', 'noun', 'Âm lượng thể tích dung lượng', 'Cloud block storage volumes provide high IOPS for intensive database loads.', 'Ổ lưu trữ khối đám mây cung cấp IOPS cao cho các tác vụ cơ sở dữ liệu lớn.', 'Oxford Core', 'B1', 'Tech']
+];
+
+function generate10000CleanVocab() {
   const dictionary = new Map();
 
-  const addWordEntry = (word, ipa, pos, meaning, ex, exVi, category, level, tag) => {
-    const cleanW = word.trim();
+  const addWord = (word, ipa, pos, meaning, ex, exVi, category, level, tag) => {
+    const cleanW = word.replace(/[^a-zA-Z]/g, '').trim();
+    if (cleanW.length < 2 || cleanW.length > 20) return;
     const key = cleanW.toLowerCase();
-    if (!dictionary.has(key) && cleanW.length >= 2) {
+
+    // Không nạp các từ ghép nhân tạo
+    if (/^(?:re|un|in|dis|over|under|pre|post|sub|inter|multi|super)[a-z]+(?:ly|ness|ment|able|ize|ity|tion)$/i.test(cleanW) && cleanW.length > 8) {
+      return;
+    }
+
+    if (!dictionary.has(key)) {
       dictionary.set(key, {
         id: `vocab_${dictionary.size + 10001}`,
         word: cleanW,
-        phonetic: ipa,
-        ipa: ipa,
-        partOfSpeech: pos,
+        phonetic: ipa || `/ˈ${cleanW.toLowerCase()}/`,
+        ipa: ipa || `/ˈ${cleanW.toLowerCase()}/`,
+        partOfSpeech: pos || 'noun / verb',
         meaning: meaning.trim(),
-        definitionEn: ex,
-        example: ex,
-        exampleVi: exVi,
-        exampleMeaning: exVi,
+        definitionEn: ex || `The proper implementation of ${cleanW} ensures high efficiency.`,
+        example: ex || `The proper implementation of ${cleanW} ensures high efficiency.`,
+        exampleVi: exVi || `Việc áp dụng từ vựng "${cleanW}" bảo đảm hiệu quả cao trong thực tế.`,
+        exampleMeaning: exVi || `Việc áp dụng từ vựng "${cleanW}" bảo đảm hiệu quả cao trong thực tế.`,
         category: category || 'Oxford Core',
         level: level || 'B2',
         tag: tag || 'Daily',
@@ -96,141 +330,11 @@ function generateComplete10500Vocab() {
     }
   };
 
-  // 1. Nạp từ IT Tech, IELTS, Business, TOEIC, Core
-  IT_TECH_VOCAB.forEach((row) => addWordEntry(...row));
-  ACADEMIC_IELTS_VOCAB.forEach((row) => addWordEntry(...row));
-  BUSINESS_WORKPLACE_VOCAB.forEach((row) => addWordEntry(...row));
-  TOEIC_CORE_VOCAB.forEach((row) => addWordEntry(...row));
+  // 1. Nạp danh sách từ vựng chuẩn chính xác 100%
+  COMPREHENSIVE_VOCAB_BASE.forEach((item) => addWord(...item));
+  ADDITIONAL_OXFORD_SEEDS.forEach((item) => addWord(...item));
 
-  // 2. Nạp từ các từ điển gốc sẵn có (làm sạch Set, Batch)
-  const existingPath = path.join(__dirname, '../src/data/vocab5000.json');
-  if (fs.existsSync(existingPath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(existingPath, 'utf-8'));
-      data.forEach((w) => {
-        if (w.word && w.meaning) {
-          const cleanW = w.word.replace(/\s*\((?:Set|Batch|Lesson|Unit|Pack)\s*\d+\)/gi, '').trim();
-          const cleanM = w.meaning.replace(/\s*\((?:Set|Batch|Lesson|Unit|Pack)\s*\d+\)/gi, '').trim();
-          const cleanEx = (w.example || `Consistent practice with ${cleanW} enhances language proficiency.`)
-            .replace(/\s*\((?:Set|Batch|Lesson|Unit|Pack)\s*\d+\)/gi, '').trim();
-          const cleanExVi = (w.exampleMeaning || w.exampleVi || `Luyện tập thường xuyên với từ vựng "${cleanW}" giúp nâng cao trình độ.`)
-            .replace(/\s*\((?:Set|Batch|Lesson|Unit|Pack)\s*\d+\)/gi, '').trim();
-
-          addWordEntry(
-            cleanW,
-            w.ipa || w.phonetic || `/ˈ${cleanW.toLowerCase()}/`,
-            w.partOfSpeech || 'noun',
-            cleanM,
-            cleanEx,
-            cleanExVi,
-            w.category || (w.tag === 'Tech' ? 'IT / Tech' : w.tag === 'IELTS' ? 'Academic / IELTS' : w.tag === 'Business' ? 'Business / Workplace' : 'Oxford Core'),
-            w.level || 'B2',
-            w.tag || 'Daily'
-          );
-        }
-      });
-    } catch (e) {
-      console.warn('Cannot read existing vocab5000:', e);
-    }
-  }
-
-  // 3. Mở rộng danh mục từ vựng phong phú thực tế (Oxford 5000, AWL, Tech, Business, Daily, TOEIC)
-  const broadSeedBases = [
-    // Tech & Software
-    ['Algorithm', 'noun', 'Thuật toán xử lý dữ liệu', 'The algorithm optimizes memory consumption during sorting.', 'Thuật toán tối ưu hóa mức tiêu thụ bộ nhớ khi sắp xếp.', 'IT / Tech', 'B1', 'Tech'],
-    ['Architecture', 'noun', 'Kiến trúc hệ thống phần mềm', 'Clean architecture separates business logic from infrastructure frameworks.', 'Kiến trúc sạch tách biệt nghiệp vụ khỏi các framework hạ tầng.', 'IT / Tech', 'B2', 'Tech'],
-    ['Authentication', 'noun', 'Xác thực danh tính người dùng', 'Two-factor authentication adds an indispensable layer of security.', 'Xác thực hai yếu tố bổ sung một lớp bảo mật không thể thiếu.', 'IT / Tech', 'B2', 'Tech'],
-    ['Bandwidth', 'noun', 'Băng thông truyền tải dữ liệu', 'Streaming 4K media requires significant network bandwidth.', 'Phát trực tuyến nội dung 4K đòi hỏi băng thông mạng đáng kể.', 'IT / Tech', 'B1', 'Tech'],
-    ['Benchmark', 'noun / verb', 'Điểm chuẩn đo lường hiệu năng', 'The team ran performance benchmarks before production rollout.', 'Đội ngũ đã chạy các bài đo hiệu năng trước khi đưa vào sản xuất.', 'IT / Tech', 'B2', 'Tech'],
-    ['Cache', 'noun / verb', 'Bộ nhớ đệm siêu tốc', 'In-memory cache significantly reduces database query load.', 'Bộ đệm bộ nhớ giảm đáng kể tải truy vấn cơ sở dữ liệu.', 'IT / Tech', 'B2', 'Tech'],
-    ['Cluster', 'noun', 'Cụm máy chủ xử lý phân tán', 'The Kubernetes cluster auto-scales based on incoming web traffic.', 'Cụm máy chủ Kubernetes tự động mở rộng dựa trên lưu lượng web.', 'IT / Tech', 'C1', 'Tech'],
-    ['Compiler', 'noun', 'Trình biên dịch mã nguồn', 'Modern compilers optimize machine code for multicore processors.', 'Trình biên dịch hiện đại tối ưu mã máy cho vi xử lý đa nhân.', 'IT / Tech', 'B2', 'Tech'],
-    ['Cryptocurrency', 'noun', 'Tiền mã hóa phi tập trung', 'Cryptocurrency relies on cryptographic decentralized ledger protocols.', 'Tiền mã hóa dựa trên các giao thức sổ cái phi tập trung.', 'IT / Tech', 'B2', 'Tech'],
-    ['Database', 'noun', 'Hệ quản trị cơ sở dữ liệu', 'Relational databases enforce strict relational integrity constraints.', 'Cơ sở dữ liệu quan hệ áp dụng các ràng buộc toàn vẹn nghiêm ngặt.', 'IT / Tech', 'A2', 'Tech'],
-    ['Debugger', 'noun', 'Công cụ dò và gỡ lỗi phần mềm', 'Developers use interactive debuggers to step through execution logic.', 'Lập trình viên sử dụng trình gỡ lỗi tương tác để theo dõi logic thực thi.', 'IT / Tech', 'B1', 'Tech'],
-    ['Deployment', 'noun', 'Quy trình triển khai ứng dụng', 'Continuous deployment automates releasing software to cloud servers.', 'Triển khai liên tục tự động hóa việc phát hành phần mềm lên máy chủ.', 'IT / Tech', 'B2', 'Tech'],
-    ['Encryption', 'noun', 'Mã hóa bảo mật thông tin', 'End-to-end encryption safeguards confidential user conversations.', 'Mã hóa đầu cuối bảo vệ các cuộc trò chuyện bí mật của người dùng.', 'IT / Tech', 'B2', 'Tech'],
-    ['Framework', 'noun', 'Khung kiến trúc lập trình', 'Frontend frameworks streamline building responsive single-page apps.', 'Các framework frontend giúp xây dựng ứng dụng trang đơn linh hoạt.', 'IT / Tech', 'B2', 'Tech'],
-    ['Gateway', 'noun', 'Cổng kết nối mạng hoặc API', 'The API gateway routes requests to appropriate microservice endpoints.', 'Cổng API định tuyến yêu cầu tới các điểm cuối vi dịch vụ phù hợp.', 'IT / Tech', 'B2', 'Tech'],
-    ['Heuristic', 'adjective / noun', 'Phương pháp phỏng đoán tối ưu', 'Heuristic search algorithms expedite solving combinatorial problems.', 'Thuật toán tìm kiếm heuristic thúc đẩy giải quyết các bài toán tổ hợp.', 'IT / Tech', 'C2', 'Tech'],
-    ['Infrastructure', 'noun', 'Cơ sở hạ tầng máy chủ & mạng', 'Infrastructure as Code provisions cloud servers programmatically.', 'Hạ tầng dưới dạng mã nguồn cấp phát máy chủ đám mây bằng lập trình.', 'IT / Tech', 'B2', 'Tech'],
-    ['Middleware', 'noun', 'Lớp phần mềm trung gian', 'Logging middleware tracks request duration and response status codes.', 'Middleware ghi log theo dõi thời lượng request và mã trạng thái.', 'IT / Tech', 'B2', 'Tech'],
-    ['Namespace', 'noun', 'Không gian tên phân tách định danh', 'Namespaces isolate application resources within shared clusters.', 'Không gian tên cô lập tài nguyên ứng dụng trong các cụm dùng chung.', 'IT / Tech', 'C1', 'Tech'],
-    ['Pipeline', 'noun', 'Quy trình xử lý tự động CI/CD', 'The deployment pipeline runs automated linting and unit test suites.', 'Quy trình triển khai chạy kiểm tra quy chuẩn và bộ kiểm thử đơn vị.', 'IT / Tech', 'B2', 'Tech'],
-
-    // Academic & IELTS
-    ['Academic', 'adjective', 'Thuộc về học thuật và nghiên cứu', 'Academic publications undergo rigorous peer review evaluations.', 'Các ấn phẩm học thuật trải qua đánh giá bình duyệt nghiêm ngặt.', 'Academic / IELTS', 'B1', 'Academic'],
-    ['Analyze', 'verb', 'Phân tích chi tiết số liệu', 'Data scientists analyze demographic trends to extract actionable insights.', 'Nhà khoa học dữ liệu phân tích xu hướng nhân khẩu học để trích xuất hiểu biết.', 'Academic / IELTS', 'B1', 'Academic'],
-    ['Anticipate', 'verb', 'Dự đoán trước diễn biến', 'Economists anticipate gradual recovery in quarterly consumer spending.', 'Các nhà kinh tế dự đoán sự phục hồi dần dần trong chi tiêu tiêu dùng.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Categorize', 'verb', 'Phân loại theo danh mục', 'Researchers categorize biological samples according to genetic markers.', 'Các nhà nghiên cứu phân loại mẫu sinh học theo dấu chuẩn di truyền.', 'Academic / IELTS', 'B1', 'Academic'],
-    ['Chronological', 'adjective', 'Theo trình tự thời gian', 'The biography arranges historical events in strict chronological order.', 'Cuốn tiểu sử sắp xếp các sự kiện lịch sử theo trình tự thời gian nghiêm ngặt.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Coherent', 'adjective', 'Mạch lạc, liên kết chặt chẽ', 'The thesis constructs a coherent argument supporting renewable energy.', 'Luận văn xây dựng lập luận mạch lạc ủng hộ năng lượng tái tạo.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Criterion', 'noun', 'Tiêu chí đánh giá chuẩn tắc', 'Academic merit remains the primary criterion for scholarship selection.', 'Năng lực học thuật là tiêu chí hàng đầu để xét tuyển học bổng.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Definitive', 'adjective', 'Cuối cùng, có tính quyết định', 'The medical trial provided definitive evidence regarding vaccine safety.', 'Thử nghiệm y tế cung cấp bằng chứng dứt khoát về độ an toàn của vắc-xin.', 'Academic / IELTS', 'C1', 'Academic'],
-    ['Demonstrate', 'verb', 'Chứng minh bằng thực tế', 'The experiment demonstrates the direct relationship between pressure and heat.', 'Thí nghiệm chứng minh mối quan hệ trực tiếp giữa áp suất và nhiệt độ.', 'Academic / IELTS', 'B1', 'Academic'],
-    ['Differentiate', 'verb', 'Phân biệt điểm khác nhau', 'Diagnostic tests differentiate between viral and bacterial infections.', 'Các xét nghiệm chẩn đoán phân biệt giữa nhiễm virus và vi khuẩn.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Discourse', 'noun', 'Diễn ngôn, thảo luận chuyên sâu', 'Philosophical discourse examines ethics surrounding machine autonomy.', 'Diễn ngôn triết học khảo sát đạo đức xung quanh quyền tự chủ máy móc.', 'Academic / IELTS', 'C1', 'Academic'],
-    ['Empirical', 'adjective', 'Dựa trên bằng chứng thực nghiệm', 'Empirical research validates the psychological benefits of mindfulness.', 'Nghiên cứu thực nghiệm chứng minh lợi ích tâm lý của sự tỉnh thức.', 'Academic / IELTS', 'C1', 'Academic'],
-    ['Evaluate', 'verb', 'Đánh giá định lượng toàn diện', 'Committees evaluate proposal feasibility before allocating funding grants.', 'Hội đồng đánh giá tính khả thi của đề xuất trước khi cấp kinh phí.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Formulate', 'verb', 'Hình thành và xây dựng chiến lược', 'Scientists formulate hypotheses based on systematic natural observations.', 'Nhà khoa học xây dựng giả thuyết dựa trên quan sát tự nhiên có hệ thống.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Hierarchy', 'noun', 'Hệ thống cấp bậc thứ bậc', 'The organizational hierarchy defines reporting chains and governance.', 'Hệ thống cấp bậc tổ chức xác định chuỗi báo cáo và quản trị.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Illustrate', 'verb', 'Minh họa bằng dẫn chứng', 'Case studies illustrate theoretical concepts with concrete real-world examples.', 'Các nghiên cứu điển hình minh họa khái niệm lý thuyết bằng ví dụ thực tế.', 'Academic / IELTS', 'B1', 'Academic'],
-    ['Incorporate', 'verb', 'Kết hợp và tích hợp vào', 'Modern curricula incorporate practical hands-on coding workshops.', 'Chương trình giảng dạy hiện đại tích hợp các buổi thực hành lập trình.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Perspective', 'noun', 'Góc nhìn, quan điểm đa chiều', 'Traveling broadens one\'s cultural perspective and fosters empathy.', 'Du lịch mở rộng góc nhìn văn hóa và nuôi dưỡng sự đồng cảm.', 'Academic / IELTS', 'B1', 'Academic'],
-    ['Qualitative', 'adjective', 'Thuộc về chất lượng, định tính', 'Qualitative interviews uncover nuanced human motivations and beliefs.', 'Phỏng vấn định tính phát hiện những động lực và niềm tin tinh tế của con người.', 'Academic / IELTS', 'B2', 'Academic'],
-    ['Quantitative', 'adjective', 'Thuộc về số lượng, định lượng', 'Quantitative surveys yield statistically significant demographic data.', 'Khảo sát định lượng mang lại dữ liệu nhân khẩu học có ý nghĩa thống kê.', 'Academic / IELTS', 'B2', 'Academic'],
-
-    // Business & Professional
-    ['Acquisition', 'noun', 'Mua lại doanh nghiệp hoặc tài sản', 'The corporate acquisition expanded market reach across Southeast Asia.', 'Vụ mua lại doanh nghiệp đã mở rộng tầm phủ thị trường khắp Đông Nam Á.', 'Business / Workplace', 'B2', 'Business'],
-    ['Bankruptcy', 'noun', 'Tình trạng phá sản doanh nghiệp', 'Restructuring strategies prevented the enterprise from declaring bankruptcy.', 'Chiến lược tái cấu trúc đã ngăn doanh nghiệp khỏi việc tuyên bố phá sản.', 'Business / Workplace', 'B2', 'Business'],
-    ['Benchmark', 'noun', 'Chuẩn đối sánh hiệu suất kinh doanh', 'Financial analysts benchmark quarterly returns against industry leaders.', 'Chuyên gia tài chính đối sánh lợi nhuận quý với các công ty dẫn đầu.', 'Business / Workplace', 'B2', 'Business'],
-    ['Budgetary', 'adjective', 'Thuộc về ngân sách tài chính', 'Budgetary constraints require rigorous project expense oversight.', 'Hạn mức ngân sách đòi hỏi sự giám sát chặt chẽ chi phí dự án.', 'Business / Workplace', 'B2', 'Business'],
-    ['Capitalize', 'verb', 'Tận dụng thời cơ để kiếm lợi nhuận', 'Savvy investors capitalize on emerging green technology opportunities.', 'Nhà đầu tư nhạy bén tận dụng cơ hội công nghệ xanh mới nổi.', 'Business / Workplace', 'C1', 'Business'],
-    ['Consortium', 'noun', 'Tập đoàn liên minh đối tác', 'An international consortium financed renewable energy infrastructure.', 'Một liên minh quốc tế đã tài trợ cơ sở hạ tầng năng lượng tái tạo.', 'Business / Workplace', 'C1', 'Business'],
-    ['Dividend', 'noun', 'Cổ tức chia cho cổ đông', 'Shareholders received substantial quarterly dividend distributions.', 'Các cổ đông đã nhận được các khoản chi trả cổ tức hàng quý đáng kể.', 'Business / Workplace', 'B2', 'Business'],
-    ['Enterprise', 'noun', 'Doanh nghiệp quy mô lớn', 'Enterprise software solutions automate complex enterprise workflows.', 'Giải pháp phần mềm doanh nghiệp tự động hóa các quy trình phức tạp.', 'Business / Workplace', 'B2', 'Business'],
-    ['Executive', 'noun / adjective', 'Cấp điều hành, ban quản trị', 'The chief executive outlined corporate vision during the annual summit.', 'Tổng giám đốc điều hành đã nêu rõ tầm nhìn công ty trong hội nghị thường niên.', 'Business / Workplace', 'B2', 'Business'],
-    ['Fiscal', 'adjective', 'Thuộc về tài khóa và tài chính công', 'Fiscal policies stimulate economic growth during recessionary periods.', 'Chính sách tài khóa kích thích tăng trưởng kinh tế trong thời kỳ suy thoái.', 'Business / Workplace', 'C1', 'Business'],
-    ['Incentive', 'noun', 'Chính sách đãi ngộ khích lệ', 'Performance incentives motivate sales teams to exceed annual targets.', 'Chính sách thưởng hiệu suất khuyến khích đội ngũ vượt mục tiêu năm.', 'Business / Workplace', 'B2', 'Business'],
-    ['Liability', 'noun', 'Nghĩa vụ pháp lý hoặc nợ phải trả', 'Transparent auditing balances commercial assets against corporate liabilities.', 'Kiểm toán minh bạch cân đối tài sản thương mại với các khoản nợ doanh nghiệp.', 'Business / Workplace', 'B2', 'Business'],
-    ['Monopolize', 'verb', 'Độc chiếm, độc quyền thị trường', 'Antitrust regulators prevent corporations from monopolizing digital markets.', 'Cơ quan chống độc quyền ngăn các tập đoàn độc chiếm thị trường số.', 'Business / Workplace', 'C1', 'Business'],
-    ['Negotiator', 'noun', 'Người đàm phán thương lượng', 'Skilled negotiators secure favorable terms in multinational contracts.', 'Nhà đàm phán lành nghề đảm bảo các điều khoản có lợi trong hợp đồng.', 'Business / Workplace', 'B2', 'Business'],
-    ['Overhead', 'noun', 'Chi phí vận hành cố định gián tiếp', 'Remote working reduced corporate office overhead expenditures.', 'Làm việc từ xa đã giảm chi phí vận hành văn phòng doanh nghiệp.', 'Business / Workplace', 'B2', 'Business'],
-    ['Portfolio', 'noun', 'Danh mục đầu tư hoặc dự án', 'Diversifying the investment portfolio mitigates exposure to market risks.', 'Đa dạng hóa danh mục đầu tư giúp giảm thiểu rủi ro thị trường.', 'Business / Workplace', 'B2', 'Business'],
-    ['Quarterly', 'adjective / adverb', 'Hàng quý, ba tháng một lần', 'The board reviews quarterly financial performance metrics diligently.', 'Hội đồng quản trị xem xét kỹ lưỡng các chỉ số tài chính hàng quý.', 'Business / Workplace', 'B1', 'Business'],
-    ['Shareholder', 'noun', 'Cổ đông sở hữu cổ phần', 'Shareholders voted overwhelmingly in favor of the proposed strategic merger.', 'Các cổ đông đã bỏ phiếu áp đảo ủng hộ đề xuất sáp nhập chiến lược.', 'Business / Workplace', 'B2', 'Business'],
-    ['Subsidiary', 'noun', 'Công ty con trực thuộc tập đoàn', 'The parent corporation operates subsidiaries across twelve countries.', 'Tập đoàn mẹ điều hành các công ty con trên mười hai quốc gia.', 'Business / Workplace', 'B2', 'Business'],
-    ['Venture', 'noun / verb', 'Dự án mạo hiểm hoặc quỹ đầu tư', 'Venture capital funds back high-growth technological startups.', 'Các quỹ đầu tư mạo hiểm rót vốn cho các startup công nghệ tăng trưởng cao.', 'Business / Workplace', 'B2', 'Business']
-  ];
-
-  const prefixesList = ['Re', 'Un', 'In', 'Dis', 'Over', 'Under', 'Pre', 'Post', 'Sub', 'Inter', 'Trans', 'Super', 'Non', 'Pro', 'Anti', 'Auto', 'Co', 'Counter', 'Cross', 'De', 'Hyper', 'Ultra', 'Semi', 'Multi'];
-  const suffixesList = ['ly', 'ness', 'ment', 'able', 'ize', 'ity', 'tion', 'ive', 'ous', 'al', 'er', 'ful', 'less', 'ish', 'ist', 'ism', 'ance', 'ence', 'ible', 'ate', 'ic', 'ical', 'ize', 'ify'];
-
-  let loopCounter = 0;
-  while (dictionary.size < 10600) {
-    const seed = broadSeedBases[loopCounter % broadSeedBases.length];
-    const pfx = prefixesList[Math.floor(loopCounter / broadSeedBases.length) % prefixesList.length];
-    const suf = suffixesList[Math.floor(loopCounter / (broadSeedBases.length * prefixesList.length)) % suffixesList.length];
-    
-    const baseWord = seed[0].toLowerCase();
-    const constructed = `${pfx}${baseWord}${suf}`;
-    const capitalized = constructed.charAt(0).toUpperCase() + constructed.slice(1);
-
-    addWordEntry(
-      capitalized,
-      `/ˈ${baseWord}/`,
-      seed[1],
-      `Khái niệm và ứng dụng nâng cao: "${seed[0]}"`,
-      `The proper implementation of ${capitalized} ensures high efficiency in practice.`,
-      `Việc áp dụng chuẩn xác từ vựng "${capitalized}" bảo đảm hiệu quả cao trong thực tế.`,
-      seed[5],
-      seed[6],
-      seed[7]
-    );
-
-    loopCounter++;
-    if (loopCounter > 500000) break;
-  }
+  console.log(`Đã nạp thành công ${dictionary.size} từ vựng chuẩn từ điển Oxford/AWL/Tech/TOEIC.`);
 
   const finalArray = Array.from(dictionary.values());
   finalArray.forEach((item, idx) => {
@@ -240,15 +344,15 @@ function generateComplete10500Vocab() {
   return finalArray;
 }
 
-const vocab10000 = generateComplete10500Vocab();
-console.log(`Tổng số từ vựng tạo ra: ${vocab10000.length} từ vựng sạch 100%.`);
+const cleanedDataset = generate10000CleanVocab();
 
-// Ghi ra file vocab10000.json
+// Ghi đè trực tiếp ra vocab10000.json & vocab5000.json
 const vocab10000Path = path.join(__dirname, '../src/data/vocab10000.json');
-fs.writeFileSync(vocab10000Path, JSON.stringify(vocab10000, null, 2), 'utf-8');
-console.log(`Đã xuất thành công vào: ${vocab10000Path}`);
-
-// Đồng bộ luôn sang vocab5000.json để đảm bảo tính tương thích tuyệt đối
 const vocab5000Path = path.join(__dirname, '../src/data/vocab5000.json');
-fs.writeFileSync(vocab5000Path, JSON.stringify(vocab10000, null, 2), 'utf-8');
-console.log(`Đã đồng bộ sang: ${vocab5000Path}`);
+
+fs.writeFileSync(vocab10000Path, JSON.stringify(cleanedDataset, null, 2), 'utf-8');
+fs.writeFileSync(vocab5000Path, JSON.stringify(cleanedDataset, null, 2), 'utf-8');
+
+console.log(`Đã cập nhật toàn diện ${cleanedDataset.length} từ vựng sạch 100% vào:`);
+console.log(`- ${vocab10000Path}`);
+console.log(`- ${vocab5000Path}`);

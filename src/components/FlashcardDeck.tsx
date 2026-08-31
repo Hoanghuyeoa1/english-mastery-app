@@ -20,17 +20,22 @@ import {
   Eye,
   EyeOff,
   FileText,
-  Bookmark
+  Gamepad2,
+  Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
 import { isDueForReview, formatIntervalPreview } from '../services/srsAlgorithm';
 import { speakWord } from '../services/speechService';
-import { SRSGrade, VocabTag, VocabWord } from '../types';
+import { SRSGrade, VocabTag, VocabWord, ActiveTab } from '../types';
 import { DailySettingsModal } from './DailySettingsModal';
 
 type QueueMode = 'DUE' | 'NEW';
 type FilterTag = 'ALL' | 'FAVORITE' | 'SAVED_SENTENCES' | VocabTag;
+
+interface FlashcardDeckProps {
+  onNavigate?: (tab: ActiveTab) => void;
+}
 
 const AUDIO_SPEED_PRESETS = [0.5, 0.75, 1.0, 1.25];
 
@@ -46,7 +51,7 @@ export const isSentenceItem = (w: VocabWord): boolean => {
   );
 };
 
-export const FlashcardDeck: React.FC = () => {
+export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
   const { 
     vocabularyList, 
     processReview, 
@@ -65,9 +70,15 @@ export const FlashcardDeck: React.FC = () => {
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedTag, setSelectedTag] = useState<FilterTag>('ALL');
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [queueMode, setQueueMode] = useState<QueueMode>('NEW');
+  
+  // 1. CỐ ĐỊNH DANH SÁCH PHIÊN HỌC (FROZEN SESSION QUEUE)
+  // Không bị re-filter khi store cập nhật tiến độ
+  const [sessionWords, setSessionWords] = useState<VocabWord[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isFlipped, setIsFlipped] = useState(false);
   const [isExampleRevealed, setIsExampleRevealed] = useState(false);
+  const [isSessionCompleted, setIsSessionCompleted] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
   const todayProgress = dailyHistory[today] || {
@@ -83,53 +94,11 @@ export const FlashcardDeck: React.FC = () => {
   const newWordsLearnedCount = todayProgress.newWordsLearned || 0;
   const isDailyNewGoalCompleted = newWordsLearnedCount >= dailyNewLimit;
 
-  // 1. Hàng đợi Ôn tập (Due Review Queue) - Đã phân tách từ vựng vs câu dịch
-  const dueReviewWords = useMemo(() => {
-    return vocabularyList.filter((w) => {
-      const isDue = isDueForReview(w.nextReviewDate);
-      const isAlreadyLearned = w.srsLevel > 0 || !!w.lastReviewedDate;
-      if (!isDue || !isAlreadyLearned) return false;
+  // Thống kê toàn cục
+  const totalDueReviewCount = useMemo(() => {
+    return vocabularyList.filter((w) => isDueForReview(w.nextReviewDate) && (w.srsLevel > 0 || !!w.lastReviewedDate)).length;
+  }, [vocabularyList]);
 
-      const isSentence = isSentenceItem(w);
-
-      if (selectedTag === 'SAVED_SENTENCES') {
-        return isSentence;
-      }
-      if (selectedTag === 'FAVORITE') {
-        return !!w.isFavorite;
-      }
-      if (selectedTag === 'ALL') {
-        // Mặc định tab Tất Cả: Chỉ nạp các từ vựng / cụm từ cốt lõi
-        return !isSentence;
-      }
-      // Các chủ đề cụ thể (Tech, IELTS, TOEIC...): Chỉ lấy từ vựng thuộc tag đó
-      return !isSentence && w.tag === selectedTag;
-    });
-  }, [vocabularyList, selectedTag]);
-
-  // 2. Hàng đợi Từ mới (New Words Queue) - Đã phân tách từ vựng vs câu dịch
-  const allUnlearnedWords = useMemo(() => {
-    return vocabularyList.filter((w) => {
-      const isUnlearned = w.srsLevel === 0 && !w.lastReviewedDate;
-      if (!isUnlearned) return false;
-
-      const isSentence = isSentenceItem(w);
-
-      if (selectedTag === 'SAVED_SENTENCES') {
-        return isSentence;
-      }
-      if (selectedTag === 'FAVORITE') {
-        return !!w.isFavorite;
-      }
-      if (selectedTag === 'ALL') {
-        // Mặc định tab Tất Cả: Chỉ nạp các từ vựng / cụm từ cốt lõi
-        return !isSentence;
-      }
-      return !isSentence && w.tag === selectedTag;
-    });
-  }, [vocabularyList, selectedTag]);
-
-  // Đếm số lượng câu dịch đã lưu & từ yêu thích
   const savedSentencesCount = useMemo(() => {
     return vocabularyList.filter((w) => isSentenceItem(w)).length;
   }, [vocabularyList]);
@@ -138,21 +107,59 @@ export const FlashcardDeck: React.FC = () => {
     return vocabularyList.filter((w) => w.isFavorite).length;
   }, [vocabularyList]);
 
-  // Số lượng từ mới còn lại cần nạp hôm nay
-  const remainingNewCount = Math.max(0, dailyNewLimit - newWordsLearnedCount);
-  const currentNewQueueWords = useMemo(() => {
-    return allUnlearnedWords.slice(0, remainingNewCount);
-  }, [allUnlearnedWords, remainingNewCount]);
+  // Hàm nạp chính xác danh sách từ cho phiên học (Exact Batch Slicing)
+  const loadSessionQueue = useCallback((mode: QueueMode, tag: FilterTag, customBatchSize?: number) => {
+    const list = vocabularyList;
+    let words: VocabWord[] = [];
 
-  // Mặc định chọn hàng đợi Ôn tập nếu có từ đến hạn
-  const [queueMode, setQueueMode] = useState<QueueMode>(() => {
-    const dueCount = vocabularyList.filter((w) => isDueForReview(w.nextReviewDate) && (w.srsLevel > 0 || !!w.lastReviewedDate) && !isSentenceItem(w)).length;
-    return dueCount > 0 ? 'DUE' : 'NEW';
-  });
+    if (mode === 'DUE') {
+      // Lọc danh sách từ đến hạn ôn tập
+      words = list.filter((w) => {
+        const isDue = isDueForReview(w.nextReviewDate);
+        const isAlreadyLearned = w.srsLevel > 0 || !!w.lastReviewedDate;
+        if (!isDue || !isAlreadyLearned) return false;
 
-  // Active items for current queue
-  const activeWords = queueMode === 'DUE' ? dueReviewWords : currentNewQueueWords;
-  const currentWord: VocabWord | undefined = activeWords[currentIndex];
+        const isSentence = isSentenceItem(w);
+        if (tag === 'SAVED_SENTENCES') return isSentence;
+        if (tag === 'FAVORITE') return !!w.isFavorite;
+        if (tag === 'ALL') return !isSentence;
+        return !isSentence && w.tag === tag;
+      });
+    } else {
+      // Lọc danh sách từ chưa học (New Words)
+      const unlearned = list.filter((w) => {
+        const isUnlearned = w.srsLevel === 0 && !w.lastReviewedDate;
+        if (!isUnlearned) return false;
+
+        const isSentence = isSentenceItem(w);
+        if (tag === 'SAVED_SENTENCES') return isSentence;
+        if (tag === 'FAVORITE') return !!w.isFavorite;
+        if (tag === 'ALL') return !isSentence;
+        return !isSentence && w.tag === tag;
+      });
+
+      const batchSize = customBatchSize || profile.targetDailyNewWords || 15;
+      words = unlearned.slice(0, batchSize);
+    }
+
+    setSessionWords(words);
+    setCurrentIndex(0);
+    setIsSessionCompleted(false);
+    setIsFlipped(false);
+    setIsExampleRevealed(false);
+  }, [vocabularyList, profile.targetDailyNewWords]);
+
+  // Tự động tải phiên học ban đầu và khi chuyển đổi Tab lọc / Queue Mode
+  useEffect(() => {
+    loadSessionQueue(queueMode, selectedTag);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueMode, selectedTag]);
+
+  // Kích thước mảng và vị trí thẻ hiện tại
+  const totalWords = sessionWords.length;
+  const safeIndex = totalWords > 0 ? Math.min(currentIndex, totalWords - 1) : 0;
+  const currentWord: VocabWord | undefined = sessionWords[safeIndex];
+  const isLastCard = totalWords > 0 && safeIndex === totalWords - 1;
 
   // Kiểm tra xem mục học hiện tại là câu dài (Sentence)
   const isCurrentSentence = useMemo(() => {
@@ -183,54 +190,65 @@ export const FlashcardDeck: React.FC = () => {
   // Tự động phát âm khi chuyển thẻ từ vựng mới
   useEffect(() => {
     setIsExampleRevealed(false);
-    if (autoPlayAudio && currentWord) {
+    if (autoPlayAudio && currentWord && !isSessionCompleted) {
       const timer = setTimeout(() => {
         handlePlayAudio(currentWord.word);
       }, 200);
       return () => clearTimeout(timer);
     }
-  }, [currentWord?.id, autoPlayAudio, handlePlayAudio]);
-
-  const handlePrev = useCallback(() => {
-    if (currentIndex > 0) {
-      setIsFlipped(false);
-      setIsExampleRevealed(false);
-      setCurrentIndex((prev) => prev - 1);
-    }
-  }, [currentIndex]);
-
-  const handleNext = useCallback(() => {
-    if (currentIndex < activeWords.length - 1) {
-      setIsFlipped(false);
-      setIsExampleRevealed(false);
-      setCurrentIndex((prev) => prev + 1);
-    }
-  }, [currentIndex, activeWords.length]);
+  }, [currentWord?.id, autoPlayAudio, handlePlayAudio, isSessionCompleted]);
 
   const fireSuccessConfetti = useCallback(() => {
     confetti({
-      particleCount: 90,
-      spread: 70,
+      particleCount: 100,
+      spread: 75,
       origin: { y: 0.6 },
       colors: ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6'],
     });
   }, []);
 
-  // Đánh giá mức độ ghi nhớ SM-2
+  const handlePrev = useCallback(() => {
+    if (safeIndex > 0) {
+      setIsFlipped(false);
+      setIsExampleRevealed(false);
+      setCurrentIndex((prev) => Math.max(0, prev - 1));
+    }
+  }, [safeIndex]);
+
+  // Next / Phím D / Bỏ qua -> Tự động tính là đã học xong từ hiện tại & tăng tiến độ
+  const handleNext = useCallback(() => {
+    if (!currentWord || totalWords === 0) return;
+
+    // Tự động ghi nhận từ hiện tại đã học (Grade 2 - Tốt / Đã hiểu)
+    processReview(currentWord.id, 2);
+    setIsFlipped(false);
+    setIsExampleRevealed(false);
+
+    if (safeIndex >= totalWords - 1) {
+      // Đã đến thẻ cuối cùng -> Kích hoạt Hoàn thành phiên và KHÔNG tăng index vượt quá mảng
+      fireSuccessConfetti();
+      setIsSessionCompleted(true);
+    } else {
+      setCurrentIndex((prev) => Math.min(prev + 1, totalWords - 1));
+    }
+  }, [currentWord, safeIndex, totalWords, processReview, fireSuccessConfetti]);
+
+  // Đánh giá mức độ ghi nhớ SM-2 (1, 2, 3, 4)
   const handleGrade = useCallback((grade: SRSGrade) => {
-    if (!currentWord) return;
+    if (!currentWord || totalWords === 0) return;
 
     processReview(currentWord.id, grade);
     setIsFlipped(false);
     setIsExampleRevealed(false);
 
-    if (currentIndex >= activeWords.length - 1) {
+    if (safeIndex >= totalWords - 1) {
+      // Đã đánh giá thẻ cuối cùng -> Kích hoạt Hoàn thành phiên
       fireSuccessConfetti();
-      setCurrentIndex(0);
+      setIsSessionCompleted(true);
     } else {
-      setCurrentIndex((prev) => prev + 1);
+      setCurrentIndex((prev) => Math.min(prev + 1, totalWords - 1));
     }
-  }, [currentWord, currentIndex, activeWords.length, processReview, fireSuccessConfetti]);
+  }, [currentWord, safeIndex, totalWords, processReview, fireSuccessConfetti]);
 
   // Toggle Bookmark / Favorite
   const handleToggleFavorite = useCallback(() => {
@@ -246,6 +264,8 @@ export const FlashcardDeck: React.FC = () => {
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
+
+      if (isSessionCompleted) return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -308,11 +328,21 @@ export const FlashcardDeck: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentWord, handleGrade, handlePlayAudio, handlePrev, handleNext, handleToggleFavorite, isMaskExample, setIsMaskExample, handleCycleAudioSpeed]);
+  }, [currentWord, handleGrade, handlePlayAudio, handlePrev, handleNext, handleToggleFavorite, isMaskExample, setIsMaskExample, handleCycleAudioSpeed, isSessionCompleted]);
 
+  // Nạp thêm từ mới chính xác (Exact Batch Slicing)
   const handleAddMoreWords = (count: number) => {
     addExtraNewWords(count);
+    loadSessionQueue('NEW', selectedTag, count);
     fireSuccessConfetti();
+  };
+
+  // Ôn lại danh sách vừa xong
+  const handleRestartSession = () => {
+    setCurrentIndex(0);
+    setIsSessionCompleted(false);
+    setIsFlipped(false);
+    setIsExampleRevealed(false);
   };
 
   const tagsList: FilterTag[] = [
@@ -373,8 +403,6 @@ export const FlashcardDeck: React.FC = () => {
         <button
           onClick={() => {
             setQueueMode('DUE');
-            setCurrentIndex(0);
-            setIsFlipped(false);
           }}
           className={`relative p-4 rounded-3xl border transition-all text-left flex items-center justify-between overflow-hidden ${
             queueMode === 'DUE'
@@ -393,7 +421,7 @@ export const FlashcardDeck: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-sm sm:text-base text-white">🔄 Hàng Đợi Ôn Tập</span>
-                {dueReviewWords.length > 0 && (
+                {totalDueReviewCount > 0 && (
                   <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-bold animate-pulse">
                     Đến hạn
                   </span>
@@ -406,8 +434,8 @@ export const FlashcardDeck: React.FC = () => {
           </div>
 
           <div className="text-right">
-            <div className={`text-2xl font-black ${dueReviewWords.length > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
-              {dueReviewWords.length}
+            <div className={`text-2xl font-black ${totalDueReviewCount > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+              {totalDueReviewCount}
             </div>
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Từ cần ôn</span>
           </div>
@@ -417,8 +445,6 @@ export const FlashcardDeck: React.FC = () => {
         <button
           onClick={() => {
             setQueueMode('NEW');
-            setCurrentIndex(0);
-            setIsFlipped(false);
           }}
           className={`relative p-4 rounded-3xl border transition-all text-left flex items-center justify-between overflow-hidden ${
             queueMode === 'NEW'
@@ -467,12 +493,12 @@ export const FlashcardDeck: React.FC = () => {
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-xl font-semibold">
               <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-slate-400">Cần ôn:</span>
-              <strong className="text-emerald-400">{dueReviewWords.length} mục</strong>
+              <strong className="text-emerald-400">{totalDueReviewCount} mục</strong>
             </div>
 
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-xl font-semibold">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-slate-400">Từ mới:</span>
+              <span className="text-slate-400">Từ mới hôm nay:</span>
               <strong className="text-cyan-400">{newWordsLearnedCount} / {dailyNewLimit}</strong>
             </div>
           </div>
@@ -563,8 +589,6 @@ export const FlashcardDeck: React.FC = () => {
               key={tag}
               onClick={() => {
                 setSelectedTag(tag);
-                setCurrentIndex(0);
-                setIsFlipped(false);
               }}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                 isSelected
@@ -584,86 +608,130 @@ export const FlashcardDeck: React.FC = () => {
         })}
       </div>
 
-      {/* 4. MAIN CONTENT AREA */}
-      
-      {/* CASE A: QUEUE ÔN TẬP - HẾT TỪ ĐẾN HẠN */}
-      {queueMode === 'DUE' && dueReviewWords.length === 0 && (
+      {/* ========================================================================= */}
+      {/* 4. MÀN HÌNH HOÀN THÀNH PHIÊN HỌC & NẠP THÊM TỪ (COMPLETION VIEW)           */}
+      {/* ========================================================================= */}
+      {isSessionCompleted ? (
+        <div className="bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border-2 border-emerald-500/50 rounded-3xl p-8 sm:p-12 text-center shadow-2xl space-y-6 animate-fadeIn">
+          
+          <div className="w-20 h-20 bg-gradient-to-tr from-emerald-500 via-teal-400 to-cyan-400 text-slate-950 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/20 animate-bounce">
+            <Award className="w-10 h-10 stroke-[2.5]" />
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-block px-3.5 py-1 bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 rounded-full text-xs font-black uppercase tracking-wider">
+              Phiên Học Hoàn Tất 🎉
+            </div>
+            
+            <h3 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
+              Tuyệt Vời! Bạn Đã Hoàn Thành Mục Tiêu Học!
+            </h3>
+
+            <p className="text-slate-400 text-sm sm:text-base max-w-lg mx-auto leading-relaxed">
+              Bạn đã hoàn thành việc ôn luyện trọn vẹn danh sách từ trong phiên này. Hãy chọn nạp thêm từ mới hoặc thử thách bản thân trong Đấu Trường!
+            </p>
+          </div>
+
+          {/* Quick Statistics Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl mx-auto py-2">
+            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+              <span className="text-[11px] text-slate-400 block">Đã học xong</span>
+              <strong className="text-xl font-black text-white">{totalWords} mục</strong>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+              <span className="text-[11px] text-slate-400 block">Hôm nay</span>
+              <strong className="text-xl font-black text-cyan-400">{newWordsLearnedCount}/{dailyNewLimit}</strong>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+              <span className="text-[11px] text-slate-400 block">Kinh nghiệm</span>
+              <strong className="text-xl font-black text-amber-400">+{Math.max(10, totalWords * 10)} XP</strong>
+            </div>
+
+            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl">
+              <span className="text-[11px] text-slate-400 block">Chuỗi Streak</span>
+              <strong className="text-xl font-black text-orange-400 flex items-center justify-center gap-1">
+                <Flame className="w-4 h-4 fill-orange-400" />
+                <span>{profile.streak || 1} ngày</span>
+              </strong>
+            </div>
+          </div>
+
+          {/* Action Buttons to Continue or Practice */}
+          <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => handleAddMoreWords(15)}
+              className="px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-xl shadow-emerald-500/25 transition-all flex items-center gap-2 transform hover:scale-105"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Nạp thêm +15 từ mới</span>
+            </button>
+
+            <button
+              onClick={() => handleAddMoreWords(30)}
+              className="px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-xl shadow-cyan-500/25 transition-all flex items-center gap-2 transform hover:scale-105"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Nạp thêm +30 từ mới</span>
+            </button>
+
+            <button
+              onClick={handleRestartSession}
+              className="px-5 py-3.5 bg-slate-800 hover:bg-slate-750 text-white font-bold rounded-2xl border border-slate-700 transition-all text-xs sm:text-sm flex items-center gap-2"
+            >
+              <RotateCw className="w-4 h-4" />
+              <span>Ôn lại danh sách vừa xong</span>
+            </button>
+
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('arcade')}
+                className="px-5 py-3.5 bg-purple-600/30 hover:bg-purple-600/50 text-purple-300 border border-purple-500/50 font-bold rounded-2xl transition-all text-xs sm:text-sm flex items-center gap-2"
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span>Vào Đấu Trường Arcade</span>
+              </button>
+            )}
+          </div>
+
+        </div>
+      ) : totalWords === 0 ? (
+        /* Hết từ trong hàng đợi */
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-12 text-center shadow-2xl space-y-5">
           <div className="w-20 h-20 bg-emerald-500/10 text-emerald-400 rounded-3xl flex items-center justify-center mx-auto border border-emerald-500/20">
             <CheckCircle2 className="w-10 h-10 text-emerald-400 animate-pulse" />
           </div>
           
           <div className="space-y-2">
-            <h3 className="text-2xl sm:text-3xl font-black text-white">Tuyệt vời! Đã hoàn thành ôn tập hôm nay 🎉</h3>
+            <h3 className="text-2xl sm:text-3xl font-black text-white">Tuyệt vời! Đã hoàn thành hết từ trong danh mục này 🎉</h3>
             <p className="text-slate-400 text-sm max-w-md mx-auto">
-              Không còn mục nào đến hạn ôn tập trong danh mục này theo thuật toán Spaced Repetition SM-2.
+              Không còn mục nào cần ôn tập trong nhóm này. Hãy chọn nạp thêm từ mới từ kho 10.000 từ vựng!
             </p>
           </div>
 
-          <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="pt-4 flex flex-wrap items-center justify-center gap-3">
             <button
-              onClick={() => {
-                setQueueMode('NEW');
-                setCurrentIndex(0);
-              }}
-              className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-extrabold rounded-2xl text-sm shadow-xl shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
+              onClick={() => handleAddMoreWords(15)}
+              className="px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-extrabold rounded-2xl text-sm shadow-xl shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Chuyển sang Học Từ Mới ({remainingNewCount} từ)</span>
+              <span>Nạp ngay +15 từ mới</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
-      )}
-
-      {/* CASE B: QUEUE TỪ MỚI - ĐÃ HOÀN THÀNH MỤC TIÊU NGÀY */}
-      {queueMode === 'NEW' && isDailyNewGoalCompleted && (
-        <div className="bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border-2 border-emerald-500/40 rounded-3xl p-8 sm:p-12 text-center shadow-2xl space-y-6">
-          <div className="w-20 h-20 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 rounded-3xl flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/20">
-            <Award className="w-10 h-10 stroke-[2.5]" />
-          </div>
-
-          <div className="space-y-2">
-            <div className="inline-block px-3 py-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 rounded-full text-xs font-black uppercase tracking-wider">
-              Mục Tiêu Đã Hoàn Thành
-            </div>
-            <h3 className="text-2xl sm:text-3xl font-black text-white">
-              Chúc Mừng! Bạn Đã Học Đủ {newWordsLearnedCount} Từ Mới Hôm Nay! 🎉
-            </h3>
-            <p className="text-slate-400 text-sm max-w-lg mx-auto">
-              Bạn đã hoàn thành xuất sắc mục tiêu nạp từ mới hàng ngày. Hãy chọn học thêm nếu vẫn còn tràn đầy năng lượng!
-            </p>
-          </div>
-
-          {/* Action Buttons to Add More Words */}
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
-            <button
-              onClick={() => handleAddMoreWords(5)}
-              className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Học thêm +5 từ mới</span>
-            </button>
-            <button
-              onClick={() => handleAddMoreWords(10)}
-              className="px-5 py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-2"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>Học thêm +10 từ mới</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* CASE C: ACTIVE FLASHCARD LEARNING VIEW */}
-      {activeWords.length > 0 && (!isDailyNewGoalCompleted || queueMode === 'DUE') && (
+      ) : (
+        /* ACTIVE FLASHCARD LEARNING VIEW */
         <>
-          {/* Top Session Progress Bar */}
+          {/* Top Session Progress Bar (CỐ ĐỊNH TỔNG SỐ TỪ TRONG SUỐT PHIÊN) */}
           <div className="space-y-2">
             <div className="flex justify-between items-center text-xs font-semibold text-slate-400 px-1">
               <span>
                 {queueMode === 'DUE' ? '🔄 Đang ôn tập:' : '✨ Đang học từ mới:'}{' '}
-                <strong className="text-white">{currentIndex + 1} / {activeWords.length}</strong>
+                <strong className="text-white">
+                  {safeIndex + 1} / {totalWords}
+                </strong>
               </span>
               
               <div className="flex items-center gap-2">
@@ -684,7 +752,7 @@ export const FlashcardDeck: React.FC = () => {
                     ? 'bg-gradient-to-r from-emerald-500 to-teal-400' 
                     : 'bg-gradient-to-r from-teal-400 to-cyan-400'
                 }`}
-                style={{ width: `${((currentIndex + 1) / activeWords.length) * 100}%` }}
+                style={{ width: `${((safeIndex + 1) / totalWords) * 100}%` }}
               />
             </div>
           </div>
@@ -914,14 +982,14 @@ export const FlashcardDeck: React.FC = () => {
           </div>
 
           {/* ========================================================================= */}
-          {/* BOTTOM CONTROLS: 3-COLUMN ERGONOMIC LAYOUT (DYNAMIC FLIP LABELS)          */}
+          {/* BOTTOM CONTROLS: 3-COLUMN ERGONOMIC LAYOUT (BOUNDARY-CHECKED NEXT/FINISH) */}
           {/* ========================================================================= */}
           <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-3 pt-2">
             
             {/* Cột 1: Nút Từ Trước */}
             <button
               onClick={handlePrev}
-              disabled={currentIndex === 0}
+              disabled={safeIndex === 0}
               title="Từ trước (Phím A hoặc mũi tên ←)"
               className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-850 disabled:opacity-30 disabled:hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white font-bold rounded-2xl transition-all text-xs sm:text-sm shadow-md"
             >
@@ -941,16 +1009,19 @@ export const FlashcardDeck: React.FC = () => {
               <kbd className="hidden md:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 text-[10px]">Space</kbd>
             </button>
 
-            {/* Cột 3: Nút Từ Tiếp Theo */}
+            {/* Cột 3: Nút Từ Tiếp Theo / Hoàn Thành Phiên */}
             <button
               onClick={handleNext}
-              disabled={currentIndex >= activeWords.length - 1}
-              title="Từ tiếp theo (Phím D hoặc mũi tên →)"
-              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-850 disabled:opacity-30 disabled:hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white font-bold rounded-2xl transition-all text-xs sm:text-sm shadow-md"
+              title={isLastCard ? 'Hoàn thành phiên học (Phím D)' : 'Từ tiếp theo (Phím D hoặc mũi tên →)'}
+              className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl transition-all text-xs sm:text-sm font-black shadow-lg ${
+                isLastCard
+                  ? 'bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-emerald-500/30 ring-2 ring-emerald-400/50 transform hover:scale-[1.02]'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 border border-emerald-400/50 text-slate-950 shadow-emerald-500/20'
+              }`}
             >
-              <span>Từ tiếp theo ▶</span>
-              <kbd className="hidden md:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400 text-[10px]">D</kbd>
-              <ChevronRight className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{isLastCard ? '🎉 Hoàn thành phiên' : 'Từ tiếp theo ▶'}</span>
+              <kbd className="hidden md:inline px-1.5 py-0.5 bg-slate-950/40 border border-slate-900/50 rounded text-slate-900 text-[10px]">D</kbd>
+              <ChevronRight className="w-4 h-4 text-slate-950 shrink-0" />
             </button>
           </div>
 
@@ -1022,7 +1093,7 @@ export const FlashcardDeck: React.FC = () => {
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">A / D</kbd>
-              <span>Trước / Tiếp</span>
+              <span>Trước / Tiếp (Tự động ghi nhận)</span>
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">1-4</kbd>

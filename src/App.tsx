@@ -66,11 +66,11 @@ export function App() {
           />
         )}
 
-        {activeTab === 'flashcards' && <FlashcardDeck />}
+        {activeTab === 'flashcards' && <FlashcardDeck onNavigate={(tab) => setActiveTab(tab)} />}
 
         {activeTab === 'toeic' && <ToeicAssessmentView />}
 
-        {activeTab === 'quiz' && <QuizArena />}
+        {(activeTab === 'quiz' || activeTab === 'arcade') && <QuizArena />}
 
         {activeTab === 'pronunciation' && <PronunciationArena />}
 

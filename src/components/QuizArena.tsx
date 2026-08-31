@@ -10,9 +10,7 @@ import {
   Trophy, 
   Flame, 
   Shuffle, 
-  Lightbulb, 
   Check, 
-  ArrowRight,
   Headphones
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -21,9 +19,11 @@ import { speakWord } from '../services/speechService';
 import { getFullDictionaryBank } from '../services/dictionaryIndex';
 import { 
   cleanWordString, 
+  cleanMeaningForScramble,
   sanitizeExampleSentence, 
   maskTargetWordInSentence 
 } from '../services/textSanitizer';
+import { WordScramble } from './WordScramble';
 import { VocabWord, VocabTag } from '../types';
 
 type ArcadeMode = 'speed_match' | 'word_scramble' | 'dictation' | 'classic_quiz';
@@ -36,7 +36,11 @@ interface MatchTile {
   isMatched: boolean;
 }
 
-export const QuizArena: React.FC = () => {
+interface QuizArenaProps {
+  defaultCategory?: string;
+}
+
+export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
   const { 
     vocabularyList, 
     gainXP, 
@@ -45,7 +49,14 @@ export const QuizArena: React.FC = () => {
     audioSpeed 
   } = useAppStore();
 
-  const [activeMode, setActiveMode] = useState<ArcadeMode>('speed_match');
+  const [activeMode, setActiveMode] = useState<ArcadeMode>(() => {
+    if (defaultCategory === 'speed_match') return 'speed_match';
+    if (defaultCategory === 'word_scramble') return 'word_scramble';
+    if (defaultCategory === 'dictation') return 'dictation';
+    if (defaultCategory === 'classic_quiz') return 'classic_quiz';
+    return 'speed_match';
+  });
+
   const [selectedTag, setSelectedTag] = useState<VocabTag | 'ALL'>('ALL');
   const [streakCount, setStreakCount] = useState(0);
   const [totalXpSession, setTotalXpSession] = useState(0);
@@ -101,7 +112,7 @@ export const QuizArena: React.FC = () => {
     const tiles: MatchTile[] = [];
     selectedWords.forEach((w, idx) => {
       const cleanW = cleanWordString(w.word);
-      const cleanMeaning = cleanWordString(w.meaning).split(/[:;,]/)[0].trim().slice(0, 35);
+      const cleanMeaning = cleanMeaningForScramble(w.meaning, cleanW);
       tiles.push({
         id: `en_${idx}_${cleanW}`,
         wordId: cleanW.toLowerCase(),
@@ -206,103 +217,7 @@ export const QuizArena: React.FC = () => {
   };
 
   // ==========================================
-  // 2. WORD SCRAMBLE (GHÉP CHỮ CHÍNH TẢ) STATE
-  // ==========================================
-  const [scrambleWord, setScrambleWord] = useState<VocabWord | null>(null);
-  const [scrambledLetters, setScrambledLetters] = useState<{ char: string; originalIdx: number; isUsed: boolean }[]>([]);
-  const [assembledLetters, setAssembledLetters] = useState<{ char: string; letterId: number }[]>([]);
-  const [scrambleSuccess, setScrambleSuccess] = useState(false);
-  const [scrambleError, setScrambleError] = useState(false);
-
-  const initScrambleRound = useCallback((wordObj?: VocabWord) => {
-    const pool = filteredVocab.length > 0 ? filteredVocab : masterVocabBank;
-    const word = wordObj || pool[Math.floor(Math.random() * pool.length)];
-    if (!word) return;
-
-    const cleanWord = cleanWordString(word.word);
-    setScrambleWord({ ...word, word: cleanWord });
-    setScrambleSuccess(false);
-    setScrambleError(false);
-    setAssembledLetters([]);
-
-    const chars = cleanWord.split('').map((char, idx) => ({
-      char,
-      originalIdx: idx,
-      isUsed: false,
-    }));
-
-    // Xáo trộn chữ cái
-    const shuffled = [...chars].sort(() => 0.5 - Math.random());
-    setScrambledLetters(shuffled);
-  }, [filteredVocab, masterVocabBank]);
-
-  useEffect(() => {
-    if (activeMode === 'word_scramble' && !scrambleWord) {
-      initScrambleRound();
-    }
-  }, [activeMode, scrambleWord, initScrambleRound]);
-
-  const handlePickLetter = (letterItem: { char: string; originalIdx: number; isUsed: boolean }, indexInScrambled: number) => {
-    if (letterItem.isUsed || scrambleSuccess) return;
-
-    const newAssembled = [...assembledLetters, { char: letterItem.char, letterId: letterItem.originalIdx }];
-    setAssembledLetters(newAssembled);
-
-    setScrambledLetters((prev) =>
-      prev.map((item, idx) => (idx === indexInScrambled ? { ...item, isUsed: true } : item))
-    );
-
-    // Kiểm tra nếu đã xếp đủ số ký tự
-    if (scrambleWord && newAssembled.length === scrambleWord.word.length) {
-      const spelled = newAssembled.map((i) => i.char).join('');
-      if (spelled.toLowerCase() === scrambleWord.word.toLowerCase()) {
-        // ĐÚNG CHÍNH TẢ!
-        setScrambleSuccess(true);
-        speakWord(scrambleWord.word, audioVoice, audioSpeed);
-        gainXP(20);
-        setTotalXpSession((prev) => prev + 20);
-        setStreakCount((prev) => prev + 1);
-        confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
-
-        setTimeout(() => {
-          initScrambleRound();
-        }, 1200);
-      } else {
-        // SAI!
-        setScrambleError(true);
-        setTimeout(() => setScrambleError(false), 600);
-      }
-    }
-  };
-
-  const handleRemoveAssembled = (indexInAssembled: number) => {
-    if (scrambleSuccess) return;
-    const removedItem = assembledLetters[indexInAssembled];
-    const newAssembled = assembledLetters.filter((_, idx) => idx !== indexInAssembled);
-    setAssembledLetters(newAssembled);
-
-    setScrambledLetters((prev) =>
-      prev.map((item) =>
-        item.originalIdx === removedItem.letterId ? { ...item, isUsed: false } : item
-      )
-    );
-  };
-
-  const handleScrambleHint = () => {
-    if (!scrambleWord || scrambleSuccess) return;
-    const nextCharNeeded = scrambleWord.word[assembledLetters.length];
-    if (!nextCharNeeded) return;
-
-    const availableIdx = scrambledLetters.findIndex(
-      (item) => !item.isUsed && item.char.toLowerCase() === nextCharNeeded.toLowerCase()
-    );
-    if (availableIdx !== -1) {
-      handlePickLetter(scrambledLetters[availableIdx], availableIdx);
-    }
-  };
-
-  // ==========================================
-  // 3. DICTATION MODE (NGHE CHÉP ĐIỀN TỪ) STATE
+  // 2. DICTATION MODE (NGHE CHÉP ĐIỀN TỪ) STATE
   // ==========================================
   const [dictationWord, setDictationWord] = useState<VocabWord | null>(null);
   const [dictationCleanAudioSentence, setDictationCleanAudioSentence] = useState('');
@@ -342,108 +257,149 @@ export const QuizArena: React.FC = () => {
     }, 300);
   }, [filteredVocab, masterVocabBank, audioVoice, audioSpeed]);
 
-  useEffect(() => {
-    if (activeMode === 'dictation' && !dictationWord) {
-      initDictationRound();
-    }
-  }, [activeMode, dictationWord, initDictationRound]);
+  const handleCheckDictation = () => {
+    if (!dictationTargetClean || !dictationInput.trim()) return;
 
-  const handleCheckDictation = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!dictationTargetClean || !dictationInput.trim() || dictationFeedback === 'correct') return;
+    const userInput = dictationInput.trim().toLowerCase();
+    const target = dictationTargetClean.toLowerCase();
 
-    const cleanInput = dictationInput.trim().toLowerCase();
-    const targetWord = dictationTargetClean.toLowerCase();
-
-    if (cleanInput === targetWord) {
+    if (userInput === target) {
+      // ĐÚNG!
       setDictationFeedback('correct');
-      speakWord(dictationTargetClean, audioVoice, audioSpeed);
       gainXP(25);
       setTotalXpSession((prev) => prev + 25);
       setStreakCount((prev) => prev + 1);
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
 
       setTimeout(() => {
         initDictationRound();
-      }, 1600);
+      }, 1400);
     } else {
+      // SAI!
       setDictationFeedback('wrong');
       consumeHeart();
-      setStreakCount(0);
+      setTimeout(() => setDictationFeedback(null), 1200);
     }
   };
 
   // ==========================================
-  // 4. CLASSIC QUIZ (TRẮC NGHIỆM 4 ĐÁP ÁN) STATE
+  // 3. CLASSIC QUIZ (TRẮC NGHIỆM 4 ĐÁP ÁN) STATE
   // ==========================================
-  const [quizIdx, setQuizIdx] = useState(0);
-  const [selectedQuizOption, setSelectedQuizOption] = useState<string | null>(null);
-  const [isQuizAnswered, setIsQuizAnswered] = useState(false);
+  const [quizWord, setQuizWord] = useState<VocabWord | null>(null);
+  const [quizOptions, setQuizOptions] = useState<string[]>([]);
+  const [selectedQuizAnswer, setSelectedQuizAnswer] = useState<string | null>(null);
+  const [quizFeedback, setQuizFeedback] = useState<'correct' | 'wrong' | null>(null);
 
-  const currentQuizWord = filteredVocab[quizIdx % filteredVocab.length] || masterVocabBank[0];
+  const initClassicQuizRound = useCallback(() => {
+    const pool = filteredVocab.length >= 4 ? filteredVocab : masterVocabBank;
+    const shuffled = [...pool].sort(() => 0.5 - Math.random());
+    const target = shuffled[0];
+    if (!target) return;
 
-  const quizOptions = useMemo(() => {
-    if (!currentQuizWord) return [];
-    const correctMeaning = cleanWordString(currentQuizWord.meaning).split(/[:;,]/)[0].trim();
-    const wrongList = masterVocabBank
-      .filter((w) => cleanWordString(w.word).toLowerCase() !== cleanWordString(currentQuizWord.word).toLowerCase())
-      .map((w) => cleanWordString(w.meaning).split(/[:;,]/)[0].trim())
-      .filter((m) => m && m !== correctMeaning);
+    const cleanTargetMeaning = cleanMeaningForScramble(target.meaning, target.word);
+    const wrongOptions = shuffled
+      .slice(1, 4)
+      .map((w) => cleanMeaningForScramble(w.meaning, w.word))
+      .filter((m) => m !== cleanTargetMeaning);
 
-    const shuffledWrongs = [...new Set(wrongList)].sort(() => 0.5 - Math.random()).slice(0, 3);
-    return [correctMeaning, ...shuffledWrongs].sort(() => 0.5 - Math.random());
-  }, [currentQuizWord, masterVocabBank]);
+    // Bổ sung phương án nếu bị trùng
+    while (wrongOptions.length < 3) {
+      const randomW = pool[Math.floor(Math.random() * pool.length)];
+      const randomM = cleanMeaningForScramble(randomW.meaning, randomW.word);
+      if (randomM !== cleanTargetMeaning && !wrongOptions.includes(randomM)) {
+        wrongOptions.push(randomM);
+      }
+    }
 
-  const handleSelectQuizOption = (opt: string) => {
-    if (isQuizAnswered || !currentQuizWord) return;
-    setSelectedQuizOption(opt);
-    setIsQuizAnswered(true);
+    const allOptions = [cleanTargetMeaning, ...wrongOptions].sort(() => 0.5 - Math.random());
 
-    const correctMeaning = cleanWordString(currentQuizWord.meaning).split(/[:;,]/)[0].trim();
-    if (opt === correctMeaning) {
+    setQuizWord({ ...target, meaning: cleanTargetMeaning });
+    setQuizOptions(allOptions);
+    setSelectedQuizAnswer(null);
+    setQuizFeedback(null);
+  }, [filteredVocab, masterVocabBank]);
+
+  const handleSelectQuizOption = (option: string) => {
+    if (selectedQuizAnswer || !quizWord) return;
+    setSelectedQuizAnswer(option);
+
+    if (option === quizWord.meaning) {
+      setQuizFeedback('correct');
+      speakWord(quizWord.word, audioVoice, audioSpeed);
       gainXP(15);
       setTotalXpSession((prev) => prev + 15);
       setStreakCount((prev) => prev + 1);
-      speakWord(cleanWordString(currentQuizWord.word), audioVoice, audioSpeed);
-      confetti({ particleCount: 30, spread: 50, origin: { y: 0.7 } });
+      confetti({ particleCount: 35, spread: 50, origin: { y: 0.7 } });
+
+      setTimeout(() => {
+        initClassicQuizRound();
+      }, 1200);
     } else {
+      setQuizFeedback('wrong');
       consumeHeart();
-      setStreakCount(0);
+      setTimeout(() => {
+        initClassicQuizRound();
+      }, 1400);
     }
   };
 
-  const handleNextQuiz = () => {
-    setSelectedQuizOption(null);
-    setIsQuizAnswered(false);
-    setQuizIdx((prev) => prev + 1);
-  };
+  // ==========================================
+  // AUTO-INITIALIZER: TỰ ĐỘNG NẠP TRẬN ĐẤU KHI VỪA MỞ
+  // ==========================================
+  useEffect(() => {
+    if (activeMode === 'speed_match') {
+      if (matchTiles.length === 0 && !isMatchOver) {
+        startSpeedMatch();
+      }
+    } else if (activeMode === 'dictation') {
+      if (!dictationWord) {
+        initDictationRound();
+      }
+    } else if (activeMode === 'classic_quiz') {
+      if (!quizWord) {
+        initClassicQuizRound();
+      }
+    }
+  }, [
+    activeMode, 
+    matchTiles.length, 
+    isMatchOver, 
+    dictationWord, 
+    quizWord, 
+    startSpeedMatch, 
+    initDictationRound, 
+    initClassicQuizRound
+  ]);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-16">
+    <div className="max-w-5xl mx-auto space-y-6 pb-20">
       
-      {/* 1. Header Banner & Mode Tabs */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-slate-800">
+      {/* 1. TOP HEADER & ARCADE MODE SWITCHER */}
+      <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-3">
-              <span className="p-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-2xl">
-                <Zap className="w-6 h-6" />
+            <div className="flex items-center gap-2">
+              <span className="p-2 bg-amber-500/10 text-amber-400 rounded-xl">
+                <Zap className="w-5 h-5" />
               </span>
-              <span>Đấu Trường Học Tập Đa Dạng (Study Arcade)</span>
-            </h2>
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                Đấu Trường Luyện Tập Arcade
+              </h2>
+            </div>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Phản xạ nối từ • Rèn chính tả ghép chữ • Nghe chép điền từ • Dữ liệu chuẩn sạch
+              Các minigame phản xạ nhanh, rèn luyện chính tả và ngữ âm tiếng Anh đỉnh cao.
             </p>
           </div>
 
-          {/* Gamification Session Stats */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 rounded-2xl text-orange-400 font-extrabold text-xs sm:text-sm">
-              <Flame className="w-4 h-4 animate-pulse" />
-              <span>Chuỗi: {streakCount}</span>
-            </div>
+          <div className="flex items-center gap-3 self-start sm:self-auto">
+            {streakCount > 0 && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 border border-orange-500/30 text-orange-400 rounded-2xl font-black text-xs">
+                <Flame className="w-4 h-4 fill-orange-400 animate-pulse" />
+                <span>Streak: {streakCount}</span>
+              </div>
+            )}
 
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-300 font-extrabold text-xs sm:text-sm">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-2xl font-black text-xs font-mono">
               <Trophy className="w-4 h-4 text-amber-400" />
               <span>+{totalXpSession} XP</span>
             </div>
@@ -464,9 +420,9 @@ export const QuizArena: React.FC = () => {
                 key={mode.id}
                 onClick={() => {
                   setActiveMode(mode.id as ArcadeMode);
-                  if (mode.id === 'speed_match' && !isMatchRunning) startSpeedMatch();
-                  if (mode.id === 'word_scramble') initScrambleRound();
+                  if (mode.id === 'speed_match') startSpeedMatch();
                   if (mode.id === 'dictation') initDictationRound();
+                  if (mode.id === 'classic_quiz') initClassicQuizRound();
                 }}
                 className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                   isSelected
@@ -501,8 +457,8 @@ export const QuizArena: React.FC = () => {
                 onClick={() => {
                   setSelectedTag(tag.id as any);
                   if (activeMode === 'speed_match') setTimeout(startSpeedMatch, 100);
-                  if (activeMode === 'word_scramble') setTimeout(initScrambleRound, 100);
                   if (activeMode === 'dictation') setTimeout(initDictationRound, 100);
+                  if (activeMode === 'classic_quiz') setTimeout(initClassicQuizRound, 100);
                 }}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
                   isSelected
@@ -617,123 +573,19 @@ export const QuizArena: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* 3. GAME AREA 2: WORD SCRAMBLE (GHÉP CHỮ RÈN CHÍNH TẢ)                    */}
+      {/* 3. GAME AREA 2: WORD SCRAMBLE (GHÉP CHỮ RÈN CHÍNH TẢ - COMPONENT CHUYÊN BIỆT) */}
       {/* ========================================================================= */}
-      {activeMode === 'word_scramble' && scrambleWord && (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
-          
-          {/* Top Bar: Word Meaning & Audio */}
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-            <div className="space-y-1">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Nghĩa tiếng Việt ({scrambleWord.partOfSpeech}):
-              </span>
-              <h3 className="text-xl sm:text-2xl font-black text-emerald-400">
-                {scrambleWord.meaning}
-              </h3>
-              {scrambleWord.ipa && (
-                <span className="text-xs text-slate-400 font-mono block">
-                  {scrambleWord.ipa}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => speakWord(scrambleWord.word, audioVoice, audioSpeed)}
-                className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-teal-400 rounded-2xl transition-colors"
-                title="Nghe phát âm"
-              >
-                <Volume2 className="w-5 h-5" />
-              </button>
-
-              <button
-                onClick={() => initScrambleRound()}
-                className="p-3 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-2xl transition-colors"
-                title="Bỏ qua từ này"
-              >
-                <Shuffle className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Assembled Word Slot Boxes */}
-          <div className="flex flex-wrap items-center justify-center gap-2 py-4 min-h-[90px]">
-            {Array.from({ length: scrambleWord.word.length }).map((_, idx) => {
-              const letter = assembledLetters[idx];
-              return (
-                <motion.button
-                  key={idx}
-                  onClick={() => letter && handleRemoveAssembled(idx)}
-                  whileHover={letter ? { scale: 1.08 } : {}}
-                  whileTap={letter ? { scale: 0.95 } : {}}
-                  className={`w-12 h-14 sm:w-14 sm:h-16 rounded-2xl font-black text-xl sm:text-2xl flex items-center justify-center transition-all border ${
-                    letter
-                      ? scrambleSuccess
-                        ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/20'
-                        : scrambleError
-                        ? 'bg-red-500/20 border-red-400 text-red-300 animate-shake'
-                        : 'bg-slate-800 border-slate-750 text-white shadow-md'
-                      : 'bg-slate-950 border-slate-800 border-dashed text-transparent'
-                  }`}
-                >
-                  {letter?.char || ''}
-                </motion.button>
-              );
-            })}
-          </div>
-
-          {/* Scrambled Available Letter Tiles */}
-          <div className="space-y-3">
-            <span className="text-xs font-bold text-slate-500 block text-center uppercase tracking-wider">
-              Bấm chọn chữ cái bên dưới để ghép đúng:
-            </span>
-
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-              {scrambledLetters.map((item, idx) => (
-                <motion.button
-                  key={idx}
-                  disabled={item.isUsed || scrambleSuccess}
-                  whileHover={!item.isUsed ? { scale: 1.1 } : {}}
-                  whileTap={!item.isUsed ? { scale: 0.9 } : {}}
-                  onClick={() => handlePickLetter(item, idx)}
-                  className={`w-11 h-13 sm:w-13 sm:h-14 rounded-2xl font-black text-lg sm:text-xl flex items-center justify-center transition-all border select-none ${
-                    item.isUsed
-                      ? 'bg-slate-950 border-slate-850 text-slate-700 opacity-20 pointer-events-none'
-                      : 'bg-gradient-to-b from-slate-800 to-slate-850 hover:from-teal-600 hover:to-teal-500 text-white hover:text-slate-950 border-slate-700 shadow-lg hover:shadow-teal-500/25'
-                  }`}
-                >
-                  {item.char}
-                </motion.button>
-              ))}
-            </div>
-          </div>
-
-          {/* Action Bar: Hint & Clear */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-800">
-            <button
-              onClick={handleScrambleHint}
-              disabled={scrambleSuccess || assembledLetters.length >= scrambleWord.word.length}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold rounded-xl text-xs transition-all disabled:opacity-30"
-            >
-              <Lightbulb className="w-4 h-4" />
-              <span>Gợi ý 1 chữ (+1 Hint)</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setAssembledLetters([]);
-                setScrambledLetters((prev) => prev.map((item) => ({ ...item, isUsed: false })));
-              }}
-              disabled={assembledLetters.length === 0 || scrambleSuccess}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-xl text-xs font-bold transition-all disabled:opacity-30"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Xóa làm lại</span>
-            </button>
-          </div>
-
-        </div>
+      {activeMode === 'word_scramble' && (
+        <WordScramble
+          vocabPool={filteredVocab.length > 0 ? filteredVocab : masterVocabBank}
+          onGainXP={(xp) => {
+            gainXP(xp);
+            setTotalXpSession((prev) => prev + xp);
+          }}
+          onIncrementStreak={() => setStreakCount((prev) => prev + 1)}
+          audioVoice={audioVoice}
+          audioSpeed={audioSpeed}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -749,9 +601,9 @@ export const QuizArena: React.FC = () => {
                 <Headphones className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Thử Thách Luyện Nghe & Điền Từ (Dictation Arena)</span>
               </span>
-              <h3 className="text-lg sm:text-xl font-black text-white mt-0.5">
-                Lắng nghe câu audio và gõ chính xác từ vựng còn thiếu
-              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Lắng nghe audio phát âm toàn bộ câu và gõ từ vựng còn thiếu vào ô trống.
+              </p>
             </div>
 
             <button
@@ -763,96 +615,85 @@ export const QuizArena: React.FC = () => {
             </button>
           </div>
 
-          {/* Audio Play Center */}
-          <div className="p-6 bg-slate-950 border border-slate-800 rounded-3xl flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+          {/* Audio Player Controller */}
+          <div className="bg-slate-850/80 border border-slate-750 rounded-2xl p-4 sm:p-6 text-center space-y-4">
+            <div className="flex items-center justify-center gap-3">
               <button
-                onClick={() => {
-                  speakWord(dictationCleanAudioSentence, audioVoice, audioSpeed);
-                }}
-                className="p-4 bg-gradient-to-tr from-cyan-500 to-teal-400 text-slate-950 rounded-2xl shadow-xl shadow-cyan-500/25 hover:scale-105 transition-all shrink-0"
-                title="Phát lại toàn bộ câu hoàn chỉnh"
+                onClick={() => speakWord(dictationCleanAudioSentence, audioVoice, audioSpeed)}
+                className="px-5 py-3 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-400 hover:to-teal-400 text-slate-950 font-black rounded-2xl shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-2 text-sm"
               >
-                <Volume2 className="w-6 h-6" />
+                <Volume2 className="w-4 h-4" />
+                <span>Phát Lại Câu (Tốc độ thường)</span>
               </button>
 
-              <div>
-                <span className="text-xs font-bold text-cyan-400 block">Bấm để nghe toàn bộ câu</span>
-                <span className="text-xs text-slate-400">
-                  Gợi ý nghĩa từ vựng cần điền: <strong className="text-emerald-400 font-semibold">{dictationWord.meaning}</strong>
-                </span>
-              </div>
+              <button
+                onClick={() => {
+                  setDictationSlow(!dictationSlow);
+                  speakWord(dictationCleanAudioSentence, audioVoice, 0.7);
+                }}
+                className="px-4 py-3 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-amber-300 font-bold rounded-2xl transition-all text-xs flex items-center gap-1.5"
+                title="Nghe tốc độ chậm 0.7x"
+              >
+                <span>🐢 Nghe Chậm (0.7x)</span>
+              </button>
             </div>
 
-            <button
-              onClick={() => {
-                setDictationSlow(!dictationSlow);
-                speakWord(dictationCleanAudioSentence, audioVoice, 0.75);
-              }}
-              className="px-3.5 py-2 bg-slate-900 hover:bg-slate-850 text-slate-300 hover:text-cyan-300 border border-slate-800 rounded-xl text-xs font-bold transition-all shrink-0"
-            >
-              🐢 Phát âm câu tốc độ chậm (0.75x)
-            </button>
+            {/* Masked Sentence Display (ẨN TỪ MỤC TIÊU [ ________ ]) */}
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl">
+              <p className="text-base sm:text-lg text-slate-200 font-medium leading-relaxed font-sans">
+                "{dictationMaskedDisplaySentence}"
+              </p>
+              {dictationWord.meaning && (
+                <p className="text-xs text-slate-400 mt-2">
+                  💡 Gợi ý nghĩa: <strong className="text-emerald-400">{cleanMeaningForScramble(dictationWord.meaning, dictationWord.word)}</strong>
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Sentence Masked Display with Target Word Hidden */}
-          <form onSubmit={handleCheckDictation} className="space-y-4">
-            <div className="p-6 bg-slate-850 rounded-2xl border border-slate-800 text-sm sm:text-base leading-relaxed text-slate-200">
-              <span className="font-medium text-slate-300">
-                {dictationMaskedDisplaySentence.split(/(\[\s*_{2,}\s*\])/g).map((part, idx) => {
-                  if (/\[\s*_{2,}\s*\]/.test(part)) {
-                    return (
-                      <span 
-                        key={idx} 
-                        className="inline-flex items-center justify-center px-4 py-1 mx-1.5 bg-cyan-500/20 text-cyan-300 font-mono font-black border-2 border-dashed border-cyan-400 rounded-xl shadow-inner shadow-cyan-500/10 animate-pulse"
-                      >
-                        [ ? ? ? ? ? ]
-                      </span>
-                    );
-                  }
-                  return <span key={idx}>{part}</span>;
-                })}
-              </span>
-            </div>
-
-            <div className="flex gap-2">
+          {/* User Input & Submit Form */}
+          <div className="space-y-3 max-w-xl mx-auto">
+            <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={dictationInput}
                 onChange={(e) => setDictationInput(e.target.value)}
-                placeholder="Gõ từ tiếng Anh bạn nghe được vào đây..."
+                onKeyDown={(e) => e.key === 'Enter' && handleCheckDictation()}
+                placeholder="Gõ từ còn thiếu vào đây..."
                 autoFocus
-                className="flex-1 bg-slate-950 border border-slate-750 focus:border-cyan-400 rounded-2xl px-5 py-3.5 text-sm sm:text-base text-white placeholder-slate-600 focus:outline-none transition-colors"
+                className={`flex-1 px-5 py-3.5 bg-slate-950 border-2 rounded-2xl text-white font-bold text-base focus:outline-none transition-all ${
+                  dictationFeedback === 'correct'
+                    ? 'border-emerald-500 ring-2 ring-emerald-500/40 bg-emerald-500/10'
+                    : dictationFeedback === 'wrong'
+                    ? 'border-red-500 ring-2 ring-red-500/40 bg-red-500/10'
+                    : 'border-slate-750 focus:border-cyan-500'
+                }`}
               />
 
               <button
-                type="submit"
+                onClick={handleCheckDictation}
                 disabled={!dictationInput.trim()}
-                className="px-6 py-3.5 bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-black rounded-2xl shadow-lg shadow-cyan-500/25 transition-all text-sm"
+                className="px-6 py-3.5 bg-gradient-to-r from-cyan-500 to-teal-400 hover:from-cyan-400 hover:to-teal-300 text-slate-950 font-black rounded-2xl text-sm shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 Kiểm Tra
               </button>
             </div>
-          </form>
 
-          {/* Result Feedback Toast */}
-          {dictationFeedback === 'correct' && (
-            <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-between animate-bounce">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <span>Chính xác tuyệt đối! Đáp án là <strong>"{dictationTargetClean}"</strong> (+25 XP)</span>
+            {/* Feedback Message */}
+            {dictationFeedback === 'correct' && (
+              <div className="flex items-center justify-center gap-2 text-emerald-400 text-sm font-bold animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Chính xác 100%! +25 XP</span>
               </div>
-            </div>
-          )}
+            )}
 
-          {dictationFeedback === 'wrong' && (
-            <div className="p-4 bg-red-500/20 border border-red-500/40 text-red-300 rounded-2xl text-xs sm:text-sm font-bold flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <XCircle className="w-5 h-5 text-red-400" />
-                <span>Chưa chính xác. Hãy nghe lại audio tốc độ chậm và thử lại! (-1 ❤️)</span>
+            {dictationFeedback === 'wrong' && (
+              <div className="flex items-center justify-center gap-2 text-red-400 text-sm font-bold animate-shake">
+                <XCircle className="w-4 h-4" />
+                <span>Chưa chính xác! Hãy lắng nghe lại kỹ hơn nhé.</span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
         </div>
       )}
@@ -860,49 +701,47 @@ export const QuizArena: React.FC = () => {
       {/* ========================================================================= */}
       {/* 5. GAME AREA 4: CLASSIC QUIZ (TRẮC NGHIỆM 4 ĐÁP ÁN)                       */}
       {/* ========================================================================= */}
-      {activeMode === 'classic_quiz' && currentQuizWord && (
+      {activeMode === 'classic_quiz' && quizWord && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
           
-          {/* Question Top Bar */}
           <div className="flex items-center justify-between pb-4 border-b border-slate-800">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Chọn nghĩa tiếng Việt đúng:
+              Chọn nghĩa đúng của từ vựng sau:
             </span>
 
             <button
-              onClick={() => speakWord(cleanWordString(currentQuizWord.word), audioVoice, audioSpeed)}
-              className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-teal-400 rounded-xl transition-colors"
-              title="Phát âm"
+              onClick={initClassicQuizRound}
+              className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all border border-slate-700"
+              title="Đổi câu hỏi khác"
             >
-              <Volume2 className="w-4 h-4" />
+              <Shuffle className="w-4 h-4" />
             </button>
           </div>
 
-          {/* Word Display Banner */}
-          <div className="text-center py-4 space-y-1">
-            <h3 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-              {cleanWordString(currentQuizWord.word)}
-            </h3>
-            {currentQuizWord.ipa && (
-              <span className="text-xs text-slate-400 font-mono">
-                {currentQuizWord.ipa} • ({currentQuizWord.partOfSpeech})
-              </span>
+          <div className="text-center py-6 space-y-3">
+            <div className="inline-block px-3 py-1 bg-cyan-500/10 text-cyan-400 rounded-full text-xs font-bold border border-cyan-500/20">
+              {quizWord.tag} {quizWord.partOfSpeech ? `• ${quizWord.partOfSpeech}` : ''}
+            </div>
+            <h2 className="text-4xl sm:text-5xl font-black text-white tracking-tight">
+              {quizWord.word}
+            </h2>
+            {quizWord.ipa && (
+              <span className="text-sm font-mono text-slate-400 block">{quizWord.ipa}</span>
             )}
           </div>
 
-          {/* 4 Options Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* 4 Choices */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             {quizOptions.map((opt, idx) => {
-              const correctMeaning = cleanWordString(currentQuizWord.meaning).split(/[:;,]/)[0].trim();
-              const isSelected = selectedQuizOption === opt;
-              const isCorrect = opt === correctMeaning;
+              const isSelected = selectedQuizAnswer === opt;
+              const isCorrect = opt === quizWord.meaning;
+              let btnStyle = 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-200';
 
-              let btnStyle = 'bg-slate-850 hover:bg-slate-800 border-slate-800 text-slate-200';
-              if (isQuizAnswered) {
+              if (selectedQuizAnswer) {
                 if (isCorrect) {
-                  btnStyle = 'bg-emerald-500/20 border-emerald-400 text-emerald-300 ring-1 ring-emerald-400';
+                  btnStyle = 'bg-emerald-500/20 border-emerald-400 text-emerald-300 ring-2 ring-emerald-400/40';
                 } else if (isSelected) {
-                  btnStyle = 'bg-red-500/20 border-red-400 text-red-300';
+                  btnStyle = 'bg-red-500/20 border-red-400 text-red-300 animate-shake';
                 } else {
                   btnStyle = 'bg-slate-900 border-slate-850 text-slate-600 opacity-40';
                 }
@@ -911,29 +750,18 @@ export const QuizArena: React.FC = () => {
               return (
                 <button
                   key={idx}
-                  disabled={isQuizAnswered}
+                  disabled={!!selectedQuizAnswer}
                   onClick={() => handleSelectQuizOption(opt)}
-                  className={`p-4 rounded-2xl border text-left font-bold text-xs sm:text-sm transition-all flex items-center justify-between ${btnStyle}`}
+                  className={`p-4 rounded-2xl border font-bold text-sm sm:text-base text-left transition-all flex items-center justify-between shadow-md ${btnStyle}`}
                 >
                   <span>{opt}</span>
-                  {isQuizAnswered && isCorrect && <Check className="w-4 h-4 text-emerald-400" />}
+                  {selectedQuizAnswer && isCorrect && (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  )}
                 </button>
               );
             })}
           </div>
-
-          {/* Next Button */}
-          {isQuizAnswered && (
-            <div className="pt-4 border-t border-slate-800 flex justify-end">
-              <button
-                onClick={handleNextQuiz}
-                className="flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20 transition-all"
-              >
-                <span>Câu Tiếp Theo</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
 
         </div>
       )}
