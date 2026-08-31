@@ -18,7 +18,9 @@ import {
   Award,
   Star,
   Eye,
-  EyeOff
+  EyeOff,
+  FileText,
+  Gauge
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
@@ -30,12 +32,15 @@ import { DailySettingsModal } from './DailySettingsModal';
 type QueueMode = 'DUE' | 'NEW';
 type FilterTag = 'ALL' | 'FAVORITE' | VocabTag;
 
+const AUDIO_SPEED_PRESETS = [0.5, 0.75, 1.0, 1.25];
+
 export const FlashcardDeck: React.FC = () => {
   const { 
     vocabularyList, 
     processReview, 
     audioVoice, 
     audioSpeed, 
+    setAudioSpeed,
     autoPlayAudio,
     setAutoPlayAudio,
     isMaskExample,
@@ -111,8 +116,32 @@ export const FlashcardDeck: React.FC = () => {
   const activeWords = queueMode === 'DUE' ? dueReviewWords : currentNewQueueWords;
   const currentWord: VocabWord | undefined = activeWords[currentIndex];
 
-  const handlePlayAudio = useCallback((text: string, rateMultiplier = 1) => {
-    speakWord(text, audioVoice, audioSpeed * rateMultiplier);
+  // Kiểm tra xem mục học hiện tại là từ đơn/cụm ngắn hay là một câu dài (Sentence)
+  const isLongSentence = useMemo(() => {
+    if (!currentWord?.word) return false;
+    const wordCount = currentWord.word.trim().split(/\s+/).length;
+    return wordCount > 4 || currentWord.word.trim().length > 35;
+  }, [currentWord?.word]);
+
+  // Bộ chọn tốc độ đọc phát âm linh hoạt (0.5x -> 0.75x -> 1.0x -> 1.25x)
+  const handleCycleAudioSpeed = useCallback(() => {
+    const currentIdx = AUDIO_SPEED_PRESETS.findIndex((s) => Math.abs(s - (audioSpeed || 1.0)) < 0.08);
+    const nextIdx = currentIdx === -1 ? 1 : (currentIdx + 1) % AUDIO_SPEED_PRESETS.length;
+    const nextSpeed = AUDIO_SPEED_PRESETS[nextIdx];
+    setAudioSpeed(nextSpeed);
+  }, [audioSpeed, setAudioSpeed]);
+
+  const speedBadge = useMemo(() => {
+    const speed = audioSpeed || 1.0;
+    if (speed <= 0.6) return { label: '0.5x', icon: '🐢', desc: 'Rất chậm' };
+    if (speed <= 0.85) return { label: '0.75x', icon: '🐢', desc: 'Chậm / Rõ âm' };
+    if (speed <= 1.1) return { label: '1.0x', icon: '⚡', desc: 'Chuẩn bản xứ' };
+    return { label: '1.25x', icon: '🚀', desc: 'Nhanh phản xạ' };
+  }, [audioSpeed]);
+
+  const handlePlayAudio = useCallback((text: string, customSpeed?: number) => {
+    const rate = customSpeed !== undefined ? customSpeed : (audioSpeed || 1.0);
+    speakWord(text, audioVoice, rate);
   }, [audioVoice, audioSpeed]);
 
   // Tự động phát âm khi chuyển thẻ từ vựng mới
@@ -208,7 +237,7 @@ export const FlashcardDeck: React.FC = () => {
 
       if (e.code === 'KeyS') {
         e.preventDefault();
-        if (currentWord) handlePlayAudio(currentWord.word, 0.7);
+        handleCycleAudioSpeed();
         return;
       }
 
@@ -243,67 +272,58 @@ export const FlashcardDeck: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentWord, handleGrade, handlePlayAudio, handlePrev, handleNext, handleToggleFavorite, isMaskExample, setIsMaskExample]);
+  }, [currentWord, handleGrade, handlePlayAudio, handlePrev, handleNext, handleToggleFavorite, isMaskExample, setIsMaskExample, handleCycleAudioSpeed]);
 
   const handleAddMoreWords = (count: number) => {
     addExtraNewWords(count);
     fireSuccessConfetti();
   };
 
-  // Hàm render câu ví dụ che từ (Cloze Masking)
-  const renderMaskedExample = (exampleText: string, targetWord: string) => {
-    if (!isMaskExample || isExampleRevealed || !exampleText || !targetWord) {
-      return <span>"{exampleText}"</span>;
+  const tagsList: FilterTag[] = ['ALL', 'FAVORITE', 'Tech', 'IELTS', 'TOEIC', 'Business', 'Academic', 'Daily', 'Idioms'];
+  const favoriteCount = vocabularyList.filter((w) => w.isFavorite).length;
+
+  // Masking Cloze Helper
+  const renderMaskedExample = (example: string, targetWord: string) => {
+    if (!isMaskExample || isExampleRevealed || !example) {
+      return example;
     }
 
-    // Tạo regex tìm từ gốc và các hậu tố biến thể (s, es, ed, ing, d)
-    const cleanWord = targetWord.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (!cleanWord) return <span>"{exampleText}"</span>;
-
-    // Pattern tìm từ
-    const pattern = new RegExp(`\\b(${cleanWord}[a-z]*)\\b`, 'gi');
-    const parts = exampleText.split(pattern);
-
-    if (parts.length <= 1) {
-      return <span>"{exampleText}"</span>;
+    const regex = new RegExp(`\\b${targetWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    if (!regex.test(example)) {
+      return example;
     }
 
+    const parts = example.split(regex);
     return (
-      <span className="inline">
-        "
-        {parts.map((part, index) => {
-          if (pattern.test(part)) {
-            return (
-              <button
-                key={index}
+      <span>
+        {parts.map((part, i) => (
+          <React.Fragment key={i}>
+            {part}
+            {i < parts.length - 1 && (
+              <span 
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsExampleRevealed(true);
                 }}
-                title="Nhấp để hiển thị từ bị ẩn (hoặc phím M)"
-                className="inline-flex items-center gap-1 mx-1 px-2.5 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-mono text-xs sm:text-sm font-black rounded-lg border border-amber-500/40 shadow-sm select-none transition-all hover:scale-105"
+                className="px-2 py-0.5 mx-1 bg-amber-500/20 text-amber-300 border border-dashed border-amber-500/50 rounded cursor-pointer font-bold select-none hover:bg-amber-500/30 transition-all text-xs"
+                title="Bấm để hiển thị từ khóa bị che"
               >
-                <span>[ _______ ]</span>
-                <Eye className="w-3.5 h-3.5 opacity-80" />
-              </button>
-            );
-          }
-          return <span key={index}>{part}</span>;
-        })}
-        "
+                [ ? ? ? ]
+              </span>
+            )}
+          </React.Fragment>
+        ))}
       </span>
     );
   };
 
-  const tagsList: FilterTag[] = ['ALL', 'FAVORITE', 'IELTS', 'TOEIC', 'Business', 'Academic', 'Daily', 'Idioms'];
-  const favoriteCount = vocabularyList.filter((w) => w.isFavorite).length;
-
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-12">
+    <div className="max-w-4xl mx-auto space-y-6 pb-16">
       
-      {/* 1. TOP DUAL QUEUE SELECTOR TABS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Tab 1: Cần Ôn Tập (Due Review) */}
+      {/* 1. DUAL QUEUE SWITCHER: ÔN TẬP VS HỌC TỪ MỚI */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        
+        {/* Tab 1: Ôn Tập SRS (Due Reviews) */}
         <button
           onClick={() => {
             setQueueMode('DUE');
@@ -319,20 +339,22 @@ export const FlashcardDeck: React.FC = () => {
           <div className="flex items-center gap-3.5">
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
               queueMode === 'DUE' 
-                ? 'bg-emerald-500 text-slate-950 font-black shadow-lg shadow-emerald-500/30' 
+                ? 'bg-emerald-400 text-slate-950 font-black shadow-lg shadow-emerald-400/30' 
                 : 'bg-slate-800 text-emerald-400'
             }`}>
-              <RefreshCw className={`w-6 h-6 ${queueMode === 'DUE' && dueReviewWords.length > 0 ? 'animate-spin-slow' : ''}`} />
+              <Brain className="w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm sm:text-base text-white">🔄 Cần Ôn Tập</span>
+                <span className="font-extrabold text-sm sm:text-base text-white">🔄 Hàng Đợi Ôn Tập</span>
                 {dueReviewWords.length > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-full text-[10px] font-bold animate-pulse">
+                    Đến hạn
+                  </span>
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                {dueReviewWords.length > 0 ? `${dueReviewWords.length} từ đến hạn theo SM-2` : 'Đã hoàn thành sạch sẽ ✨'}
+                Thuật toán lặp lại ngắt quãng SM-2
               </p>
             </div>
           </div>
@@ -412,6 +434,16 @@ export const FlashcardDeck: React.FC = () => {
           {/* Quick Ergonomic Toggles: Auto-play Audio & Mask Cloze & Settings */}
           <div className="flex items-center gap-2 flex-wrap">
             
+            {/* Audio Speed Selector Button */}
+            <button
+              onClick={handleCycleAudioSpeed}
+              title={`Tốc độ đọc hiện tại: ${speedBadge.label} (${speedBadge.desc}). Bấm để đổi (Phím S).`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold font-mono transition-all border bg-slate-800 border-slate-700 text-amber-300 hover:border-amber-500/50 hover:bg-slate-750"
+            >
+              <span>{speedBadge.icon}</span>
+              <span>Tốc độ: {speedBadge.label}</span>
+            </button>
+
             {/* Auto-Play Audio Toggle */}
             <button
               onClick={() => setAutoPlayAudio(!autoPlayAudio)}
@@ -548,35 +580,21 @@ export const FlashcardDeck: React.FC = () => {
           </div>
 
           {/* Action Buttons to Add More Words */}
-          <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
             <button
               onClick={() => handleAddMoreWords(5)}
-              className="w-full sm:w-auto px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl text-xs sm:text-sm border border-slate-700 hover:border-emerald-500/50 transition-all flex items-center justify-center gap-2 shadow-lg"
+              className="px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
             >
-              <PlusCircle className="w-4 h-4 text-emerald-400" />
-              <span>➕ Học thêm 5 từ mới</span>
+              <PlusCircle className="w-4 h-4" />
+              <span>Học thêm +5 từ mới</span>
             </button>
-
             <button
               onClick={() => handleAddMoreWords(10)}
-              className="w-full sm:w-auto px-5 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 hover:scale-105"
+              className="px-5 py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-2"
             >
-              <Flame className="w-4 h-4 text-slate-950" />
-              <span>➕ Học thêm 10 từ mới</span>
+              <PlusCircle className="w-4 h-4" />
+              <span>Học thêm +10 từ mới</span>
             </button>
-
-            {dueReviewWords.length > 0 && (
-              <button
-                onClick={() => {
-                  setQueueMode('DUE');
-                  setCurrentIndex(0);
-                }}
-                className="w-full sm:w-auto px-5 py-3 bg-slate-900 hover:bg-slate-850 text-emerald-400 font-bold rounded-2xl text-xs sm:text-sm border border-emerald-500/30 transition-all flex items-center justify-center gap-2"
-              >
-                <RefreshCw className="w-4 h-4" />
-                <span>Ôn tập {dueReviewWords.length} từ cũ</span>
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -625,17 +643,28 @@ export const FlashcardDeck: React.FC = () => {
             >
               
               {/* MẶT TRƯỚC (Front) */}
-              <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border-2 border-slate-800 hover:border-emerald-500/50 rounded-3xl p-8 flex flex-col justify-between backface-hidden shadow-2xl transition-colors">
+              <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 border-2 border-slate-800 hover:border-emerald-500/50 rounded-3xl p-6 sm:p-8 flex flex-col justify-between backface-hidden shadow-2xl transition-colors">
                 
                 {/* Top Bar of Front */}
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
-                      {currentWord?.tag}
-                    </span>
-                    <span className="text-xs text-slate-500 italic">
-                      {currentWord?.partOfSpeech}
-                    </span>
+                    {isLongSentence ? (
+                      <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20 flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Đoạn dịch / Sentence</span>
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
+                          {currentWord?.tag}
+                        </span>
+                        {currentWord?.partOfSpeech && (
+                          <span className="text-xs text-slate-500 italic">
+                            ({currentWord?.partOfSpeech})
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -645,7 +674,7 @@ export const FlashcardDeck: React.FC = () => {
                         e.stopPropagation();
                         handleToggleFavorite();
                       }}
-                      title={currentWord?.isFavorite ? 'Bỏ đánh dấu yêu thích (Phím B)' : 'Đánh dấu từ yêu thích / từ khó (Phím B)'}
+                      title={currentWord?.isFavorite ? 'Bỏ đánh dấu yêu thích (Phím B)' : 'Đánh dấu từ yêu thích (Phím B)'}
                       className={`p-2.5 rounded-full transition-all text-xs font-semibold flex items-center gap-1 ${
                         currentWord?.isFavorite
                           ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 shadow-lg shadow-amber-500/20 scale-110'
@@ -655,22 +684,26 @@ export const FlashcardDeck: React.FC = () => {
                       <Star className={`w-4 h-4 ${currentWord?.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
                     </button>
 
+                    {/* Speed Selector Toggle Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePlayAudio(currentWord?.word || '', 0.7);
+                        handleCycleAudioSpeed();
                       }}
-                      title="Phát âm chậm (phím S)"
-                      className="p-2.5 bg-slate-800/80 hover:bg-slate-700 text-slate-300 rounded-full transition-all text-xs font-semibold flex items-center gap-1"
+                      title={`Tốc độ đọc hiện tại: ${speedBadge.label} (${speedBadge.desc}). Bấm để đổi tốc độ.`}
+                      className="px-2.5 py-1.5 bg-slate-800/90 hover:bg-slate-750 border border-slate-700/80 text-amber-300 hover:text-amber-200 rounded-full transition-all text-xs font-bold font-mono flex items-center gap-1 shadow-sm active:scale-95"
                     >
-                      <span>0.7x</span>
+                      <span>{speedBadge.icon}</span>
+                      <span>{speedBadge.label}</span>
                     </button>
+
+                    {/* Audio Play Button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handlePlayAudio(currentWord?.word || '');
                       }}
-                      title="Phát âm chuẩn (phím R)"
+                      title={`Phát âm với tốc độ ${speedBadge.label} (Phím R)`}
                       className="p-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-full transition-all shadow-lg shadow-emerald-500/20 hover:scale-110"
                     >
                       <Volume2 className="w-5 h-5" />
@@ -678,37 +711,56 @@ export const FlashcardDeck: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Center Core Word */}
-                <div className="text-center my-auto py-6 space-y-3">
-                  <h2 className="text-4xl sm:text-5xl font-black text-white tracking-tight flex items-center justify-center gap-2">
-                    <span>{currentWord?.word}</span>
-                    {currentWord?.isFavorite && (
-                      <Star className="w-6 h-6 fill-amber-400 text-amber-400 inline shrink-0" />
-                    )}
-                  </h2>
-                  <div className="inline-block px-4 py-1.5 bg-slate-800/80 rounded-xl text-emerald-400 font-mono text-base sm:text-lg border border-slate-700/50">
-                    {currentWord?.ipa}
-                  </div>
-                  <p className="text-slate-400 text-sm sm:text-base max-w-md mx-auto pt-2 italic">
-                    "{currentWord?.definitionEn}"
-                  </p>
+                {/* Center Core Word or Sentence */}
+                <div className="text-center my-auto py-6 space-y-4">
+                  {isLongSentence ? (
+                    /* Dành cho câu dài / đoạn dịch */
+                    <div className="space-y-3 max-w-2xl mx-auto">
+                      <h2 className="text-lg sm:text-2xl font-bold text-white leading-relaxed tracking-normal">
+                        "{currentWord?.word}"
+                      </h2>
+                    </div>
+                  ) : (
+                    /* Dành cho từ vựng đơn / cụm collocation ngắn */
+                    <div className="space-y-3">
+                      <h2 className="text-4xl sm:text-5xl font-black text-white tracking-tight flex items-center justify-center gap-2">
+                        <span>{currentWord?.word}</span>
+                        {currentWord?.isFavorite && (
+                          <Star className="w-6 h-6 fill-amber-400 text-amber-400 inline shrink-0" />
+                        )}
+                      </h2>
+                      
+                      {/* Ẩn ô phiên âm nếu rỗng hoặc không có dữ liệu */}
+                      {currentWord?.ipa && currentWord.ipa.trim().length > 0 && currentWord.ipa.trim() !== '//' && (
+                        <div className="inline-block px-4 py-1.5 bg-slate-800/80 rounded-xl text-emerald-400 font-mono text-base sm:text-lg border border-slate-700/50">
+                          {currentWord.ipa}
+                        </div>
+                      )}
+
+                      {currentWord?.definitionEn && (
+                        <p className="text-slate-400 text-sm sm:text-base max-w-md mx-auto pt-1 italic">
+                          "{currentWord.definitionEn}"
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* Bottom Flip Hint */}
-                <div className="flex justify-center items-center gap-2 text-xs text-slate-500 pt-4 border-t border-slate-800/80">
+                {/* Bottom Flip Hint (Dynamic Label for Front) */}
+                <div className="flex justify-center items-center gap-2 text-xs text-slate-400 pt-4 border-t border-slate-800/80">
                   <RotateCw className="w-4 h-4 text-emerald-400 animate-spin-slow" />
-                  <span>Chạm hoặc nhấn <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono">Space</kbd> để lật thẻ</span>
+                  <span>Chạm vào thẻ hoặc nhấn <kbd className="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono">Space</kbd> để xem nghĩa</span>
                 </div>
               </div>
 
               {/* MẶT SAU (Back) */}
-              <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950 border-2 border-emerald-500/40 rounded-3xl p-8 flex flex-col justify-between backface-hidden rotate-y-180 shadow-2xl">
+              <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950 border-2 border-emerald-500/40 rounded-3xl p-6 sm:p-8 flex flex-col justify-between backface-hidden rotate-y-180 shadow-2xl">
                 
                 <div className="space-y-4">
                   {/* Top Bar of Back */}
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800">
                     <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                      Định nghĩa tiếng Việt
+                      {isLongSentence ? 'Bản Dịch Nghĩa Tiếng Việt' : 'Định nghĩa tiếng Việt'}
                     </span>
                     
                     <div className="flex items-center gap-2">
@@ -722,42 +774,59 @@ export const FlashcardDeck: React.FC = () => {
                         className={`p-1.5 rounded-full transition-all text-xs ${
                           currentWord?.isFavorite
                             ? 'bg-amber-500/20 text-amber-400'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-amber-400'
+                            : 'bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-amber-400'
                         }`}
                       >
                         <Star className={`w-4 h-4 ${currentWord?.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
                       </button>
 
+                      {/* Speed Button on Back */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handlePlayAudio(currentWord?.example || '');
+                          handleCycleAudioSpeed();
                         }}
-                        title="Nghe câu ví dụ"
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full text-xs flex items-center gap-1.5"
+                        title={`Tốc độ đọc: ${speedBadge.label}. Bấm để đổi.`}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 text-amber-300 rounded-full text-xs font-mono font-bold flex items-center gap-1"
+                      >
+                        <span>{speedBadge.icon}</span>
+                        <span>{speedBadge.label}</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePlayAudio(currentWord?.example || currentWord?.word || '');
+                        }}
+                        title={`Nghe audio với tốc độ ${speedBadge.label}`}
+                        className="p-2 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-full text-xs flex items-center gap-1.5"
                       >
                         <Volume2 className="w-4 h-4 text-emerald-400" />
-                        <span>Nghe ví dụ</span>
+                        <span>Nghe audio</span>
                       </button>
                     </div>
                   </div>
 
                   {/* Vietnamese Meaning */}
                   <div>
-                    <h3 className="text-2xl sm:text-3xl font-extrabold text-white leading-snug">
+                    <h3 className={`${isLongSentence ? 'text-lg sm:text-xl font-bold text-emerald-300 leading-relaxed' : 'text-2xl sm:text-3xl font-extrabold text-white leading-snug'}`}>
                       {currentWord?.meaning}
                     </h3>
                   </div>
 
-                  {/* Example Context with Masking */}
-                  <div className="bg-slate-850/80 border border-slate-700/60 rounded-2xl p-4 space-y-1.5">
-                    <p className="text-sm sm:text-base text-slate-200 font-medium leading-relaxed">
-                      {currentWord && renderMaskedExample(currentWord.example, currentWord.word)}
-                    </p>
-                    <p className="text-xs sm:text-sm text-slate-400">
-                      → {currentWord?.exampleMeaning}
-                    </p>
-                  </div>
+                  {/* Example Context (Chỉ hiển thị nếu khác với từ khóa chính) */}
+                  {currentWord?.example && currentWord.example.trim() !== currentWord.word.trim() && (
+                    <div className="bg-slate-850/80 border border-slate-700/60 rounded-2xl p-4 space-y-1.5">
+                      <p className="text-sm sm:text-base text-slate-200 font-medium leading-relaxed">
+                        {renderMaskedExample(currentWord.example, currentWord.word)}
+                      </p>
+                      {currentWord?.exampleMeaning && (
+                        <p className="text-xs sm:text-sm text-slate-400">
+                          → {currentWord.exampleMeaning}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {/* Collocations & Synonyms */}
                   {currentWord?.collocations && currentWord.collocations.length > 0 && (
@@ -786,32 +855,48 @@ export const FlashcardDeck: React.FC = () => {
             </motion.div>
           </div>
 
-          {/* Previous / Next Navigation Action Bar */}
-          <div className="flex items-center justify-between gap-4 pt-1">
+          {/* ========================================================================= */}
+          {/* BOTTOM CONTROLS: 3-COLUMN ERGONOMIC LAYOUT (DYNAMIC FLIP LABELS)          */}
+          {/* ========================================================================= */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-3 pt-2">
+            
+            {/* Cột 1: Nút Từ Trước */}
             <button
               onClick={handlePrev}
               disabled={currentIndex === 0}
               title="Từ trước (Phím A hoặc mũi tên ←)"
-              className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-850 disabled:opacity-40 disabled:hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white font-bold rounded-2xl transition-all text-xs sm:text-sm"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-850 disabled:opacity-30 disabled:hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white font-bold rounded-2xl transition-all text-xs sm:text-sm shadow-md"
             >
-              <ChevronLeft className="w-4 h-4 text-emerald-400" />
+              <ChevronLeft className="w-4 h-4 text-emerald-400 shrink-0" />
               <span>◀ Từ trước</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400 text-[10px]">A</kbd>
+              <kbd className="hidden md:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400 text-[10px]">A</kbd>
             </button>
 
+            {/* Cột 2: Nút Lật Thẻ / Đổi Mặt Động (Dynamic Label) */}
+            <button
+              onClick={() => setIsFlipped(!isFlipped)}
+              title={isFlipped ? 'Quay lại mặt trước (Phím Space)' : 'Xem nghĩa & giải thích (Phím Space)'}
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-850 hover:bg-slate-800 border border-slate-750 text-emerald-400 hover:text-emerald-300 font-bold rounded-2xl transition-all text-xs sm:text-sm shadow-md"
+            >
+              <RotateCw className={`w-4 h-4 text-emerald-400 ${isFlipped ? 'rotate-180' : ''} transition-transform duration-300`} />
+              <span>{isFlipped ? '🔄 Xem mặt trước / Lật lại' : '🔄 Xem nghĩa / Lật thẻ'}</span>
+              <kbd className="hidden md:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 text-[10px]">Space</kbd>
+            </button>
+
+            {/* Cột 3: Nút Từ Tiếp Theo */}
             <button
               onClick={handleNext}
               disabled={currentIndex >= activeWords.length - 1}
               title="Từ tiếp theo (Phím D hoặc mũi tên →)"
-              className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-850 disabled:opacity-40 disabled:hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white font-bold rounded-2xl transition-all text-xs sm:text-sm"
+              className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 hover:bg-slate-850 disabled:opacity-30 disabled:hover:bg-slate-900 border border-slate-800 text-slate-300 hover:text-white font-bold rounded-2xl transition-all text-xs sm:text-sm shadow-md"
             >
               <span>Từ tiếp theo ▶</span>
-              <kbd className="hidden sm:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400 text-[10px]">D</kbd>
-              <ChevronRight className="w-4 h-4 text-emerald-400" />
+              <kbd className="hidden md:inline px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400 text-[10px]">D</kbd>
+              <ChevronRight className="w-4 h-4 text-emerald-400 shrink-0" />
             </button>
           </div>
 
-          {/* 4 SRS Grading Buttons (Only visible when flipped) */}
+          {/* 4 SRS Grading Buttons (Chỉ hiển thị khi đã lật sang mặt sau) */}
           <AnimatePresence>
             {isFlipped && (
               <motion.div
@@ -859,10 +944,10 @@ export const FlashcardDeck: React.FC = () => {
                 {/* 4. Easy */}
                 <button
                   onClick={() => handleGrade(3)}
-                  className="flex flex-col items-center justify-center p-3.5 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 border border-emerald-500/30 rounded-2xl transition-all font-bold group shadow-lg relative"
+                  className="flex flex-col items-center justify-center p-3.5 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/30 rounded-2xl transition-all font-bold group shadow-lg relative"
                 >
                   <span className="absolute top-2 right-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-900/60 text-emerald-300 font-mono">4</span>
-                  <span className="text-sm">Dễ (Easy) 🚀</span>
+                  <span className="text-sm">Dễ (Easy)</span>
                   <span className="text-[11px] font-normal opacity-80 mt-0.5">
                     {currentWord && formatIntervalPreview(3, currentWord.interval, currentWord.srsLevel, currentWord.easeFactor)}
                   </span>
@@ -871,48 +956,45 @@ export const FlashcardDeck: React.FC = () => {
             )}
           </AnimatePresence>
 
-          {/* Keyboard Shortcuts Hint Bar */}
-          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <Keyboard className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="font-semibold text-slate-300">Phím tắt:</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-cyan-400 font-mono text-[11px]">A / ←</kbd>
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-cyan-400 font-mono text-[11px]">D / →</kbd>
-              <span>Chuyển từ</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono text-[11px]">Space</kbd>
+          {/* Keyboard Shortcuts Helper Pill */}
+          <div className="flex items-center justify-center gap-4 text-[11px] text-slate-500 pt-2 flex-wrap">
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">Space</kbd>
               <span>Lật thẻ</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-amber-400 font-mono text-[11px]">B / F</kbd>
-              <span>⭐ Gắn sao</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-amber-300 font-mono text-[11px]">M</kbd>
-              <span>Che từ ví dụ</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-red-400 font-mono text-[11px]">1</kbd>
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-amber-400 font-mono text-[11px]">2</kbd>
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-blue-400 font-mono text-[11px]">3</kbd>
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-400 font-mono text-[11px]">4</kbd>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">A / D</kbd>
+              <span>Trước / Tiếp</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">1-4</kbd>
               <span>Đánh giá SRS</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-teal-400 font-mono text-[11px]">R</kbd>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">R</kbd>
               <span>Phát âm</span>
-            </div>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">S</kbd>
+              <span>Đổi tốc độ ({speedBadge.label})</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">B</kbd>
+              <span>Gắn sao ⭐</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-slate-400">M</kbd>
+              <span>Che từ ví dụ</span>
+            </span>
           </div>
+
         </>
       )}
 
-      {/* Settings Modal */}
-      <DailySettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
+      {/* Daily Settings Modal */}
+      <DailySettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
 
     </div>
