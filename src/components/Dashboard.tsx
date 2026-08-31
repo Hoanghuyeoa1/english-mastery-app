@@ -250,24 +250,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* Card 2: Interactive Quiz */}
+          {/* Card 2: Interactive Study Arcade */}
           <div 
             onClick={() => onNavigate('quiz')}
             className="group cursor-pointer bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/40 rounded-3xl p-6 transition-all duration-300 flex flex-col justify-between shadow-xl"
           >
             <div>
               <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mb-4 group-hover:scale-110 group-hover:bg-amber-500 group-hover:text-slate-950 transition-all">
-                <Target className="w-6 h-6" />
+                <Zap className="w-6 h-6" />
               </div>
               <h3 className="text-lg font-bold text-white group-hover:text-amber-400 transition-colors">
-                Đấu Trường Trắc Nghiệm & Ghép Thẻ
+                Đấu Trường Học Tập (Study Arcade)
               </h3>
               <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Thử thách kiến thức qua bài tập trắc nghiệm 4 đáp án, điền từ vào câu và thử thách ghép thẻ 60 giây.
+                3 Minigames tương tác cao: <strong>Speed Match (Nối từ 60s)</strong>, <strong>Word Scramble (Ghép chữ)</strong> và <strong>Dictation Mode (Nghe chép điền từ)</strong>.
               </p>
             </div>
             <div className="mt-4 flex items-center gap-1 text-xs font-bold text-amber-400">
-              <span>Vào làm bài kiểm tra</span>
+              <span>Vào đấu trường Minigames</span>
               <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>

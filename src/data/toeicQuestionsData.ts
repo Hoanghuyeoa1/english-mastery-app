@@ -6,8 +6,9 @@ export const TOEIC_QUESTION_BANK: ToeicQuestion[] = [
     id: 'toeic_p1_1',
     part: 'part1_photos',
     skill: 'listening',
-    audioScript: 'Look at the picture. (A) The man is typing on a laptop. (B) The man is repairing a printer. (C) The man is drinking from a mug. (D) The man is presenting a chart.',
-    questionText: 'Part 1: Nghe 4 nhận định và chọn đáp án mô tả đúng nhất hình ảnh người đàn ông trong văn phòng.',
+    imageUrl: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1000&q=80',
+    audioScript: 'Look at the picture marked number 1. (A) The man is typing on a laptop. (B) The man is repairing a printer. (C) The man is drinking from a mug. (D) The man is presenting a chart.',
+    questionText: 'Part 1: Nghe 4 nhận định (A, B, C, D) và chọn phương án mô tả chính xác nhất bức ảnh bên dưới.',
     options: [
       'A. The man is typing on a laptop.',
       'B. The man is repairing a printer.',
@@ -15,7 +16,7 @@ export const TOEIC_QUESTION_BANK: ToeicQuestion[] = [
       'D. The man is presenting a chart.'
     ],
     correctAnswer: 'A',
-    explanation: 'Đáp án A mô tả chính xác hành động người đàn ông đang gõ bàn phím laptop trong phòng làm việc. Các phương án B, C, D không khớp với hành động.',
+    explanation: 'Đáp án (A) mô tả chính xác hành động người đàn ông đang gõ bàn phím laptop trong phòng làm việc. Các phương án (B), (C), (D) không khớp với hành động trong ảnh.',
     vietnameseTranslation: 'Nhìn vào bức ảnh. (A) Người đàn ông đang gõ máy tính xách tay. (B) Người đàn ông đang sửa máy in. (C) Người đàn ông đang uống nước từ chiếc cốc. (D) Người đàn ông đang trình bày biểu đồ.',
     keyVocabulary: [
       { word: 'Typing', ipa: '/ˈtaɪ.pɪŋ/', meaning: 'Đang gõ bàn phím' },
@@ -26,8 +27,9 @@ export const TOEIC_QUESTION_BANK: ToeicQuestion[] = [
     id: 'toeic_p1_2',
     part: 'part1_photos',
     skill: 'listening',
-    audioScript: 'Look at the picture. (A) Some boxes are being loaded into a truck. (B) Some merchandise is displayed on the shelves. (C) The cashier is counting cash. (D) Customers are waiting in line at the entrance.',
-    questionText: 'Part 1: Nghe 4 nhận định và chọn đáp án mô tả đúng nhất khu vực cửa hàng / siêu thị.',
+    imageUrl: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=1000&q=80',
+    audioScript: 'Look at the picture marked number 2. (A) Some boxes are being loaded into a truck. (B) Some merchandise is displayed on the shelves. (C) The cashier is counting cash. (D) Customers are waiting in line at the entrance.',
+    questionText: 'Part 1: Nghe 4 nhận định (A, B, C, D) và chọn phương án mô tả chính xác nhất bức ảnh bên dưới.',
     options: [
       'A. Some boxes are being loaded into a truck.',
       'B. Some merchandise is displayed on the shelves.',
@@ -35,11 +37,32 @@ export const TOEIC_QUESTION_BANK: ToeicQuestion[] = [
       'D. Customers are waiting in line at the entrance.'
     ],
     correctAnswer: 'B',
-    explanation: 'Đáp án B mô tả trạng thái hàng hóa được trưng bày ngay ngắn trên các kệ hàng.',
+    explanation: 'Đáp án (B) mô tả chính xác trạng thái hàng hóa (merchandise) được xếp ngay ngắn trên các kệ (shelves).',
     vietnameseTranslation: '(A) Một số thùng hàng đang được bốc lên xe tải. (B) Một số hàng hóa được trưng bày trên các kệ. (C) Thu ngân đang đếm tiền mặt. (D) Khách hàng đang xếp hàng tại lối vào.',
     keyVocabulary: [
       { word: 'Merchandise', ipa: '/ˈmɜː.tʃən.daɪs/', meaning: 'Hàng hóa, sản phẩm bày bán' },
       { word: 'Shelves', ipa: '/ʃelvz/', meaning: 'Các kệ, giá đỡ' }
+    ]
+  },
+  {
+    id: 'toeic_p1_3',
+    part: 'part1_photos',
+    skill: 'listening',
+    imageUrl: 'https://images.unsplash.com/photo-1531497865144-0464ef8fb9a9?auto=format&fit=crop&w=1000&q=80',
+    audioScript: 'Look at the picture marked number 3. (A) The colleagues are seated around a conference table. (B) The workers are painting the office wall. (C) The manager is locking the door. (D) The team is packing moving cartons.',
+    questionText: 'Part 1: Nghe 4 nhận định (A, B, C, D) và chọn phương án mô tả chính xác nhất bức ảnh bên dưới.',
+    options: [
+      'A. The colleagues are seated around a conference table.',
+      'B. The workers are painting the office wall.',
+      'C. The manager is locking the door.',
+      'D. The team is packing moving cartons.'
+    ],
+    correctAnswer: 'A',
+    explanation: 'Đáp án (A) mô tả chính xác cảnh các đồng nghiệp đang ngồi thảo luận quanh bàn hội nghị.',
+    vietnameseTranslation: '(A) Các đồng nghiệp đang ngồi quanh bàn họp. (B) Công nhân đang sơn tường văn phòng. (C) Người quản lý đang khóa cửa. (D) Đội ngũ đang đóng gói các thùng chuyển đồ.',
+    keyVocabulary: [
+      { word: 'Colleagues', ipa: '/ˈkɒl.iːɡz/', meaning: 'Đồng nghiệp' },
+      { word: 'Conference table', ipa: '/ˈkɒn.fər.əns ˈteɪ.bəl/', meaning: 'Bàn họp, bàn hội nghị' }
     ]
   },
 

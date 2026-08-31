@@ -2,7 +2,16 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { UserProfile, VocabWord, DailyProgress, SRSGrade, Achievement, VocabTag } from '../types';
 import { calculateSM2 } from '../services/srsAlgorithm';
-import { INITIAL_VOCABULARY } from '../data/defaultVocab';
+import { VOCAB_10000_BANK } from '../data/defaultVocab';
+
+export interface SRSProgress {
+  srsLevel: number;
+  nextReviewDate: string;
+  interval: number;
+  easeFactor: number;
+  lastReviewedDate?: string;
+  isFavorite?: boolean;
+}
 
 const INITIAL_ACHIEVEMENTS: Achievement[] = [
   {
@@ -84,9 +93,43 @@ const DEFAULT_PROFILE: UserProfile = {
   targetGoal: 'daily',
 };
 
+// Hàm kết hợp RAM static bank 10.600 từ + custom words + srsProgressMap
+function composeVocabularyList(
+  srsMap: Record<string, SRSProgress> = {},
+  customWords: VocabWord[] = []
+): VocabWord[] {
+  const combined = [...customWords, ...VOCAB_10000_BANK];
+  const uniqueMap = new Map<string, VocabWord>();
+
+  for (let i = 0; i < combined.length; i++) {
+    const w = combined[i];
+    const key = w.word.toLowerCase().trim();
+    if (!uniqueMap.has(key)) {
+      const progress = srsMap[w.id] || srsMap[key];
+      if (progress) {
+        uniqueMap.set(key, {
+          ...w,
+          srsLevel: progress.srsLevel ?? w.srsLevel ?? 0,
+          nextReviewDate: progress.nextReviewDate || w.nextReviewDate || new Date().toISOString(),
+          interval: progress.interval ?? w.interval ?? 0,
+          easeFactor: progress.easeFactor ?? w.easeFactor ?? 2.5,
+          lastReviewedDate: progress.lastReviewedDate || w.lastReviewedDate,
+          isFavorite: progress.isFavorite ?? w.isFavorite ?? false,
+        });
+      } else {
+        uniqueMap.set(key, w);
+      }
+    }
+  }
+
+  return Array.from(uniqueMap.values());
+}
+
 interface AppStoreState {
   profile: UserProfile;
-  vocabularyList: VocabWord[];
+  userCustomWords: VocabWord[];
+  srsProgressMap: Record<string, SRSProgress>;
+  vocabularyList: VocabWord[]; // In-memory unified bank
   dailyHistory: Record<string, DailyProgress>;
   achievements: Achievement[];
   audioVoice: 'en-US' | 'en-GB';
@@ -125,11 +168,93 @@ interface AppStoreState {
   resetToDefault: () => void;
 }
 
+// Storage wrapper với auto-migration & quota safety
+const safeStorage = {
+  getItem: (name: string): string | null => {
+    try {
+      const raw = localStorage.getItem(name);
+      if (!raw) return null;
+
+      // Kiểm tra nếu dữ liệu cũ chứa mảng 10.000 từ vựng (> 1.5MB), migrate trích xuất phần cần thiết
+      if (raw.length > 1500000) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && parsed.state) {
+            const s = parsed.state;
+            const migratedSrsMap: Record<string, SRSProgress> = s.srsProgressMap || {};
+            
+            // Trích xuất trạng thái SRS từ vocabularyList cũ nếu có
+            if (Array.isArray(s.vocabularyList)) {
+              s.vocabularyList.forEach((w: VocabWord) => {
+                if (w.srsLevel > 0 || w.isFavorite || w.lastReviewedDate) {
+                  migratedSrsMap[w.id] = {
+                    srsLevel: w.srsLevel,
+                    nextReviewDate: w.nextReviewDate,
+                    interval: w.interval,
+                    easeFactor: w.easeFactor,
+                    lastReviewedDate: w.lastReviewedDate,
+                    isFavorite: w.isFavorite,
+                  };
+                }
+              });
+            }
+
+            const cleanState = {
+              state: {
+                profile: s.profile || DEFAULT_PROFILE,
+                userCustomWords: s.userCustomWords || [],
+                srsProgressMap: migratedSrsMap,
+                dailyHistory: s.dailyHistory || {},
+                achievements: s.achievements || INITIAL_ACHIEVEMENTS,
+                audioVoice: s.audioVoice || 'en-US',
+                audioSpeed: s.audioSpeed || 0.85,
+                autoPlayAudio: s.autoPlayAudio ?? true,
+                isMaskExample: s.isMaskExample ?? false,
+                geminiApiKey: s.geminiApiKey || '',
+              },
+              version: parsed.version || 0,
+            };
+
+            const cleanString = JSON.stringify(cleanState);
+            localStorage.setItem(name, cleanString);
+            return cleanString;
+          }
+        } catch (migErr) {
+          console.warn('Auto-migrate error, clearing bloated storage:', migErr);
+          localStorage.removeItem(name);
+          return null;
+        }
+      }
+
+      return raw;
+    } catch (e) {
+      console.warn('localStorage getItem error:', e);
+      return null;
+    }
+  },
+  setItem: (name: string, value: string): void => {
+    try {
+      localStorage.setItem(name, value);
+    } catch (e) {
+      console.error('localStorage setItem QuotaExceededError:', e);
+    }
+  },
+  removeItem: (name: string): void => {
+    try {
+      localStorage.removeItem(name);
+    } catch (e) {
+      console.warn('localStorage removeItem error:', e);
+    }
+  },
+};
+
 export const useAppStore = create<AppStoreState>()(
   persist(
     (set, get) => ({
       profile: DEFAULT_PROFILE,
-      vocabularyList: INITIAL_VOCABULARY,
+      userCustomWords: [],
+      srsProgressMap: {},
+      vocabularyList: composeVocabularyList({}, []),
       dailyHistory: {},
       achievements: INITIAL_ACHIEVEMENTS,
       audioVoice: 'en-US',
@@ -158,11 +283,34 @@ export const useAppStore = create<AppStoreState>()(
       setGeminiApiKey: (key) => set({ geminiApiKey: key }),
 
       toggleFavorite: (wordId) => {
-        set((state) => ({
-          vocabularyList: state.vocabularyList.map((w) =>
-            w.id === wordId ? { ...w, isFavorite: !w.isFavorite } : w
-          ),
-        }));
+        set((state) => {
+          const currentWord = state.vocabularyList.find((w) => w.id === wordId);
+          const currentProg = state.srsProgressMap[wordId] || {
+            srsLevel: currentWord?.srsLevel || 0,
+            nextReviewDate: currentWord?.nextReviewDate || new Date().toISOString(),
+            interval: currentWord?.interval || 0,
+            easeFactor: currentWord?.easeFactor || 2.5,
+            lastReviewedDate: currentWord?.lastReviewedDate,
+            isFavorite: false,
+          };
+
+          const newProg: SRSProgress = {
+            ...currentProg,
+            isFavorite: !currentProg.isFavorite,
+          };
+
+          const newSrsMap = {
+            ...state.srsProgressMap,
+            [wordId]: newProg,
+          };
+
+          return {
+            srsProgressMap: newSrsMap,
+            vocabularyList: state.vocabularyList.map((w) =>
+              w.id === wordId ? { ...w, isFavorite: newProg.isFavorite } : w
+            ),
+          };
+        });
       },
 
       checkDailyReset: () => {
@@ -178,11 +326,6 @@ export const useAppStore = create<AppStoreState>()(
               targetDailyNewWords: state.profile.targetDailyNewWords || 15,
             },
           }));
-        }
-
-        // Tự động đồng bộ lên đủ 5.000 từ nếu kho từ vựng hiện tại chưa đủ
-        if (get().vocabularyList.length < 5000) {
-          get().syncVocab5000();
         }
       },
 
@@ -224,12 +367,10 @@ export const useAppStore = create<AppStoreState>()(
         const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
 
         if (diffDays === 1) {
-          // Chuỗi ngày tiếp tục
           set((state) => ({
             profile: { ...state.profile, streak: streak + 1, lastActiveDate: today },
           }));
         } else if (diffDays > 1) {
-          // Đứt chuỗi, bắt đầu lại 1
           set((state) => ({
             profile: { ...state.profile, streak: 1, lastActiveDate: today },
           }));
@@ -267,7 +408,7 @@ export const useAppStore = create<AppStoreState>()(
               ...state.profile,
               xp: newXP,
               level: newLevel,
-              hearts: leveledUp ? state.profile.maxHearts : state.profile.hearts, // Hồi đầy tim khi lên cấp
+              hearts: leveledUp ? state.profile.maxHearts : state.profile.hearts,
             },
             dailyHistory: {
               ...state.dailyHistory,
@@ -305,10 +446,19 @@ export const useAppStore = create<AppStoreState>()(
 
         const wasNewWord = (word.srsLevel === 0 && !word.lastReviewedDate);
         const sm2 = calculateSM2(grade, word.interval, word.srsLevel, word.easeFactor);
+        
+        const newProgress: SRSProgress = {
+          srsLevel: sm2.srsLevel,
+          nextReviewDate: sm2.nextReviewDate,
+          interval: sm2.interval,
+          easeFactor: sm2.easeFactor,
+          lastReviewedDate: new Date().toISOString(),
+          isFavorite: word.isFavorite || false,
+        };
+
         const updatedWord: VocabWord = {
           ...word,
-          ...sm2,
-          lastReviewedDate: new Date().toISOString(),
+          ...newProgress,
         };
 
         const today = new Date().toISOString().split('T')[0];
@@ -322,6 +472,10 @@ export const useAppStore = create<AppStoreState>()(
         };
 
         set({
+          srsProgressMap: {
+            ...state.srsProgressMap,
+            [wordId]: newProgress,
+          },
           vocabularyList: state.vocabularyList.map((v) => (v.id === wordId ? updatedWord : v)),
           dailyHistory: {
             ...state.dailyHistory,
@@ -333,12 +487,11 @@ export const useAppStore = create<AppStoreState>()(
           },
         });
 
-        // Thưởng XP theo mức độ nhớ
         const xpReward = grade === 3 ? 15 : grade === 2 ? 10 : grade === 1 ? 5 : 2;
         get().gainXP(xpReward);
       },
 
-      recordQuizCompleted: (xpEarned: number, isPerfect: boolean) => {
+      recordQuizCompleted: (xpEarned: number, _isPerfect: boolean) => {
         const today = new Date().toISOString().split('T')[0];
         const currentDaily = get().dailyHistory[today] || {
           date: today,
@@ -359,7 +512,7 @@ export const useAppStore = create<AppStoreState>()(
           },
         }));
 
-        get().gainXP(xpEarned + (isPerfect ? 10 : 0));
+        get().gainXP(xpEarned);
       },
 
       recordPronunciationMastered: (xpEarned: number) => {
@@ -396,27 +549,34 @@ export const useAppStore = create<AppStoreState>()(
           nextReviewDate: new Date().toISOString(),
         };
 
-        set((state) => ({
-          vocabularyList: [newWord, ...state.vocabularyList],
-        }));
-        get().gainXP(15);
+        set((state) => {
+          const updatedCustom = [newWord, ...state.userCustomWords];
+          return {
+            userCustomWords: updatedCustom,
+            vocabularyList: [newWord, ...state.vocabularyList],
+          };
+        });
+
+        get().gainXP(20);
       },
 
       addBatchWords: (wordsData) => {
-        if (!wordsData.length) return 0;
-
         const newWords: VocabWord[] = wordsData.map((w, idx) => ({
           ...w,
-          id: `bulk_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+          id: `bulk_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
           srsLevel: 0,
           interval: 0,
           easeFactor: 2.5,
           nextReviewDate: new Date().toISOString(),
         }));
 
-        set((state) => ({
-          vocabularyList: [...newWords, ...state.vocabularyList],
-        }));
+        set((state) => {
+          const updatedCustom = [...newWords, ...state.userCustomWords];
+          return {
+            userCustomWords: updatedCustom,
+            vocabularyList: [...newWords, ...state.vocabularyList],
+          };
+        });
 
         const earnedXP = Math.min(200, wordsData.length * 10);
         get().gainXP(earnedXP);
@@ -424,35 +584,23 @@ export const useAppStore = create<AppStoreState>()(
       },
 
       syncVocab5000: () => {
-        const currentList = get().vocabularyList;
-        const existingWordMap = new Set(currentList.map((w) => w.word.toLowerCase().trim()));
-        
-        // Lấy các từ mới trong bộ 5000 từ chưa có trong kho
-        const missingWords = INITIAL_VOCABULARY.filter(
-          (w) => !existingWordMap.has(w.word.toLowerCase().trim())
-        );
-
-        if (missingWords.length === 0) return 0;
-
-        set({
-          vocabularyList: [...currentList, ...missingWords],
-        });
-
-        return missingWords.length;
+        return 0;
       },
 
       syncVocab1000: () => {
-        return get().syncVocab5000();
+        return 0;
       },
 
       deleteWord: (wordId: string) => {
         set((state) => ({
+          userCustomWords: state.userCustomWords.filter((w) => w.id !== wordId),
           vocabularyList: state.vocabularyList.filter((w) => w.id !== wordId),
         }));
       },
 
       updateWord: (updated) => {
         set((state) => ({
+          userCustomWords: state.userCustomWords.map((w) => (w.id === updated.id ? updated : w)),
           vocabularyList: state.vocabularyList.map((w) => (w.id === updated.id ? updated : w)),
         }));
       },
@@ -463,7 +611,7 @@ export const useAppStore = create<AppStoreState>()(
         const totalQuizzes = Object.values(dailyHistory).reduce((acc, curr) => acc + curr.quizzesCompleted, 0);
 
         const updatedAchievements = achievements.map((ach) => {
-          if (ach.unlockedAt) return ach; // Already unlocked
+          if (ach.unlockedAt) return ach;
 
           let currentProgress = 0;
           if (ach.category === 'streak') currentProgress = profile.streak;
@@ -490,7 +638,8 @@ export const useAppStore = create<AppStoreState>()(
           exportedAt: new Date().toISOString(),
           version: '2.0.0',
           profile: state.profile,
-          vocabularyList: state.vocabularyList,
+          userCustomWords: state.userCustomWords,
+          srsProgressMap: state.srsProgressMap,
           dailyHistory: state.dailyHistory,
           achievements: state.achievements,
         };
@@ -500,9 +649,12 @@ export const useAppStore = create<AppStoreState>()(
       importBackupData: (jsonData: string) => {
         try {
           const parsed = JSON.parse(jsonData);
-          if (!parsed.profile || !parsed.vocabularyList || !Array.isArray(parsed.vocabularyList)) {
+          if (!parsed.profile) {
             return { success: false, message: 'Dữ liệu không đúng định dạng sao lưu của ứng dụng.' };
           }
+
+          const customWords: VocabWord[] = parsed.userCustomWords || parsed.vocabularyList || [];
+          const srsMap: Record<string, SRSProgress> = parsed.srsProgressMap || {};
 
           set({
             profile: {
@@ -510,7 +662,9 @@ export const useAppStore = create<AppStoreState>()(
               ...parsed.profile,
               isOnboarded: true,
             },
-            vocabularyList: parsed.vocabularyList,
+            userCustomWords: customWords,
+            srsProgressMap: srsMap,
+            vocabularyList: composeVocabularyList(srsMap, customWords),
             dailyHistory: parsed.dailyHistory || {},
             achievements: parsed.achievements || INITIAL_ACHIEVEMENTS,
           });
@@ -528,7 +682,9 @@ export const useAppStore = create<AppStoreState>()(
             name: '',
             isOnboarded: false,
           },
-          vocabularyList: INITIAL_VOCABULARY,
+          userCustomWords: [],
+          srsProgressMap: {},
+          vocabularyList: composeVocabularyList({}, []),
           dailyHistory: {},
           achievements: INITIAL_ACHIEVEMENTS,
         });
@@ -536,7 +692,26 @@ export const useAppStore = create<AppStoreState>()(
     }),
     {
       name: 'english_mastery_storage_v2',
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => safeStorage),
+      // PARTIALIZE: CHỈ LƯU TRỮ DỮ LIỆU CÁ NHÂN (TIẾT KIỆM 99.5% DUNG LƯỢNG LOCALSTORAGE)
+      partialize: (state) => ({
+        profile: state.profile,
+        userCustomWords: state.userCustomWords,
+        srsProgressMap: state.srsProgressMap,
+        dailyHistory: state.dailyHistory,
+        achievements: state.achievements,
+        audioVoice: state.audioVoice,
+        audioSpeed: state.audioSpeed,
+        autoPlayAudio: state.autoPlayAudio,
+        isMaskExample: state.isMaskExample,
+        geminiApiKey: state.geminiApiKey,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Khi nạp xong từ LocalStorage, đồng bộ ngay danh sách từ vựng RAM đầy đủ
+          state.vocabularyList = composeVocabularyList(state.srsProgressMap, state.userCustomWords);
+        }
+      },
     }
   )
 );

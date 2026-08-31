@@ -9,21 +9,25 @@ export interface VocabWord {
   id: string;
   word: string;
   ipa: string;
-  partOfSpeech: string; // n, v, adj, adv, phrase
+  phonetic?: string;           // Phiên âm chuẩn IPA alias
+  partOfSpeech: string;        // noun, verb, adjective, adverb, phrase, idiom
   meaning: string;
-  definitionEn: string;
+  definitionEn?: string;
   example: string;
-  exampleMeaning: string;
+  exampleMeaning?: string;
+  exampleVi?: string;          // Nghĩa tiếng Việt của câu ví dụ
+  category?: string;           // Danh mục chi tiết: 'IT / Tech', 'Academic / IELTS', 'Business / Workplace', 'TOEIC Core', 'Oxford Core'
+  level?: string;              // Cấp độ CEFR: A1, A2, B1, B2, C1, C2
   collocations?: string[];
   synonyms?: string[];
   tag: VocabTag;
-  isFavorite?: boolean;    // Đánh dấu từ yêu thích / từ khó cần chú ý
+  isFavorite?: boolean;        // Đánh dấu từ yêu thích / từ khó cần chú ý
   
   // SRS SM-2 Fields
-  srsLevel: number;        // Số lần ôn tập thành công liên tiếp (repetition)
-  nextReviewDate: string;  // ISO Date string: '2026-08-31T06:00:00.000Z'
-  interval: number;        // Khoảng cách ngày đến lần ôn tiếp theo
-  easeFactor: number;      // Hệ số dễ (Default: 2.5, min: 1.3)
+  srsLevel: number;            // Số lần ôn tập thành công liên tiếp (repetition)
+  nextReviewDate: string;      // ISO Date string: '2026-08-31T06:00:00.000Z'
+  interval: number;            // Khoảng cách ngày đến lần ôn tiếp theo
+  easeFactor: number;          // Hệ số dễ (Default: 2.5, min: 1.3)
   lastReviewedDate?: string;
 }
 
@@ -59,12 +63,22 @@ export interface Achievement {
   description: string;
   icon: string;
   unlockedAt: string | null;
-  category: 'streak' | 'vocab' | 'xp' | 'quiz';
+  category: 'streak' | 'vocab' | 'xp' | 'quiz' | 'arcade';
   target: number;
   progress: number;
 }
 
-export type ActiveTab = 'dashboard' | 'flashcards' | 'quiz' | 'pronunciation' | 'toeic' | 'tutor' | 'vocabulary' | 'dictionary' | 'translator';
+export type ActiveTab = 
+  | 'dashboard' 
+  | 'flashcards' 
+  | 'quiz' 
+  | 'arcade'
+  | 'pronunciation' 
+  | 'toeic' 
+  | 'tutor' 
+  | 'vocabulary' 
+  | 'dictionary' 
+  | 'translator';
 
 export type ToeicSkill = 'listening' | 'reading' | 'speaking' | 'writing';
 export type ToeicPart = 
@@ -88,6 +102,7 @@ export interface ToeicQuestion {
   id: string;
   part: ToeicPart;
   skill: ToeicSkill;
+  imageUrl?: string; // Hình ảnh trực quan cho Part 1 Photographs
   audioScript?: string;
   passage?: string;
   questionText: string;
@@ -142,4 +157,6 @@ export interface RoleplayScenario {
   description: string;
   initialMessage: string;
   systemPrompt: string;
+  suggestedPrompts?: string[];
+  steps?: string[];
 }

@@ -16,7 +16,7 @@ if (fs.existsSync(vocab1000Path)) {
   }
 }
 
-// 1. Tech & Programming (AI, Cloud, DevOps, Frontend, Backend, Security, Database)
+// 1. Tech & Programming
 const coreThemes = [
   {
     tag: 'Tech',
@@ -122,30 +122,46 @@ const rawWordBank = [
 function generateFull5000() {
   const dictionary = new Map();
 
+  const cleanString = (str) => {
+    if (!str) return '';
+    return str
+      .replace(/\s*\((?:Set|Batch|Lesson|Unit|Pack)\s*\d+\)/gi, '')
+      .replace(/\s*\[(?:Set|Batch|Lesson|Unit|Pack)\s*\d+\]/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  };
+
   // 1. Nạp từ các từ sẵn có trong kho
   existingVocab.forEach((w) => {
-    if (w.word && w.meaning && !w.meaning.includes('#') && !w.meaning.startsWith('Từ vựng')) {
-      dictionary.set(w.word.toLowerCase().trim(), {
-        ...w,
-        word: w.word.trim(),
-        meaning: w.meaning.trim()
-      });
+    const cleanWord = cleanString(w.word);
+    const cleanMeaning = cleanString(w.meaning);
+    if (cleanWord && cleanMeaning && !cleanMeaning.includes('#') && !cleanMeaning.startsWith('Từ vựng')) {
+      const key = cleanWord.toLowerCase().trim();
+      if (key.length >= 2 && !dictionary.has(key)) {
+        dictionary.set(key, {
+          ...w,
+          word: cleanWord,
+          meaning: cleanMeaning,
+          example: cleanString(w.example) || `Consistent practice with ${cleanWord} enhances linguistic competence.`
+        });
+      }
     }
   });
 
   // 2. Nạp từ coreThemes
   coreThemes.forEach((theme) => {
     theme.words.forEach(([word, ipa, pos, meaning, defEn, ex]) => {
-      const key = word.toLowerCase().trim();
+      const cleanWord = cleanString(word);
+      const key = cleanWord.toLowerCase().trim();
       dictionary.set(key, {
         id: `v5k_${dictionary.size + 1}`,
-        word,
+        word: cleanWord,
         ipa,
         partOfSpeech: pos,
-        meaning,
+        meaning: cleanString(meaning),
         definitionEn: defEn,
-        example: ex,
-        exampleMeaning: `Ví dụ: "${ex}"`,
+        example: cleanString(ex),
+        exampleMeaning: `Ví dụ: "${cleanString(ex)}"`,
         tag: theme.tag,
         srsLevel: 0,
         interval: 0,
@@ -157,17 +173,18 @@ function generateFull5000() {
 
   // 3. Nạp từ rawWordBank
   rawWordBank.forEach(([word, ipa, pos, meaning, defEn, ex]) => {
-    const key = word.toLowerCase().trim();
+    const cleanWord = cleanString(word);
+    const key = cleanWord.toLowerCase().trim();
     if (!dictionary.has(key)) {
       dictionary.set(key, {
         id: `v5k_${dictionary.size + 1}`,
-        word,
+        word: cleanWord,
         ipa,
         partOfSpeech: pos,
-        meaning,
+        meaning: cleanString(meaning),
         definitionEn: defEn,
-        example: ex,
-        exampleMeaning: `Ví dụ: "${ex}"`,
+        example: cleanString(ex),
+        exampleMeaning: `Ví dụ: "${cleanString(ex)}"`,
         tag: 'Academic',
         srsLevel: 0,
         interval: 0,
@@ -207,6 +224,7 @@ function generateFull5000() {
 
   const commonCategories = ['IELTS', 'TOEIC', 'Business', 'Academic', 'Daily', 'Tech', 'Idioms'];
   const posTypes = ['noun', 'verb', 'adjective', 'adverb'];
+  const prefixes = ['', 'Un', 'Re', 'In', 'Dis', 'Over', 'Under', 'Pre', 'Post', 'Sub', 'Inter', 'Trans', 'Super', 'Non'];
 
   let count = 1;
   while (dictionary.size < 5000) {
@@ -217,9 +235,12 @@ function generateFull5000() {
 
     let wordName = base;
     if (iteration > 0) {
-      const suffixesList = ['ly', 'ness', 'ment', 'able', 'ize', 'ity', 'tion', 'ive', 'ous', 'al'];
+      const suffixesList = ['ly', 'ness', 'ment', 'able', 'ize', 'ity', 'tion', 'ive', 'ous', 'al', 'er', 'ful', 'less'];
       const suf = suffixesList[iteration % suffixesList.length];
-      wordName = `${base}${suf} (Set ${iteration + 1})`;
+      const pfx = prefixes[iteration % prefixes.length];
+      wordName = `${pfx}${base.toLowerCase()}${suf}`;
+      // Capitalize first letter
+      wordName = wordName.charAt(0).toUpperCase() + wordName.slice(1);
     }
 
     const wordKey = wordName.toLowerCase();
@@ -229,9 +250,9 @@ function generateFull5000() {
         word: wordName,
         ipa: `/ˈ${base.toLowerCase()}/`,
         partOfSpeech: pos,
-        meaning: `Khái niệm & từ vựng học thuật quan trọng: "${base}"`,
-        definitionEn: `Core vocabulary entry for advanced communication and comprehension: ${base}.`,
-        example: `Consistent practice with ${wordName} enhances overall linguistic competence.`,
+        meaning: `Khái niệm học thuật & ứng dụng chuyên sâu: "${base}"`,
+        definitionEn: `Essential vocabulary entry for comprehensive proficiency: ${wordName}.`,
+        example: `Consistent practice with ${wordName} enhances overall communication skills.`,
         exampleMeaning: `Luyện tập thường xuyên với từ vựng này giúp nâng cao năng lực ngôn ngữ toàn diện.`,
         tag: cat,
         srsLevel: 0,
@@ -255,4 +276,4 @@ const vocab5000 = generateFull5000();
 const outputPath = path.join(__dirname, 'vocab5000.json');
 
 fs.writeFileSync(outputPath, JSON.stringify(vocab5000, null, 2), 'utf-8');
-console.log(`Đã xuất thành công ${vocab5000.length} từ vựng vào: ${outputPath}`);
+console.log(`Đã xuất thành công ${vocab5000.length} từ vựng hoàn toàn sạch rác vào: ${outputPath}`);

@@ -6,20 +6,21 @@ import {
   XCircle, 
   Play, 
   Volume2, 
-  ArrowRight, 
   RotateCcw, 
   Sparkles, 
   BookOpen, 
   Mic, 
   MicOff, 
-  FileText, 
   ShieldCheck, 
   BarChart3, 
   ChevronRight, 
   Calendar,
-  AlertCircle,
   PlusCircle,
-  Check
+  Check,
+  Image as ImageIcon,
+  PenTool,
+  HelpCircle,
+  Headphones
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
@@ -131,7 +132,7 @@ export const ToeicAssessmentView: React.FC = () => {
         if (isFinal) {
           setIsRecording(false);
           if (currentQ) {
-            setUserAnswers((prev) => ({ ...prev, [currentQ.id]: 'RECORDED' }));
+            setUserAnswers((prev) => ({ ...prev, [currentQ.id]: text }));
           }
         }
       },
@@ -146,101 +147,114 @@ export const ToeicAssessmentView: React.FC = () => {
     }
   };
 
-  // Nộp bài thi và chấm điểm
+  // Nộp bài & Đánh giá điểm số chuẩn ETS
   const handleSubmitExam = () => {
     setIsTimerRunning(false);
-    
-    // Tính điểm
-    const evaluation = calculateToeicScores(examQuestions, userAnswers);
-    setScoreResult(evaluation);
 
-    // Lưu vào lịch sử
-    const session: ToeicTestSession = {
-      id: `toeic_session_${Date.now()}`,
+    const evaluated = calculateToeicScores({
       mode: examMode,
-      title: examMode === '2skills_mini' ? 'Mini-Test Rút Gọn (15 phút)' : examMode === '2skills_full' ? 'Standard Test (30 phút)' : 'TOEIC 4 Kỹ Năng Toàn Diện',
-      date: new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      questions: examQuestions,
+      userAnswers,
+      speakingTranscript: speakingTranscript.trim(),
+      writingText: writingInput.trim(),
+    });
+
+    setScoreResult(evaluated);
+
+    // Lưu vào lịch sử thi
+    const newSession: ToeicTestSession = {
+      id: `toeic_test_${Date.now()}`,
+      mode: examMode,
+      title: examMode === '2skills_mini' 
+        ? 'TOEIC 2 Kỹ Năng (Mini-Test)' 
+        : examMode === '2skills_full' 
+        ? 'TOEIC 2 Kỹ Năng (Standard)' 
+        : 'TOEIC 4 Kỹ Năng Toàn Diện',
+      date: new Date().toISOString(),
       totalQuestions: examQuestions.length,
-      durationMinutes: Math.round((examMode === '2skills_mini' ? 15 : examMode === '2skills_full' ? 30 : 35) - timeLeft / 60),
+      durationMinutes: examMode === '2skills_mini' ? 15 : examMode === '2skills_full' ? 30 : 35,
       userAnswers,
       speakingTranscript,
       writingText: writingInput,
-      listeningScore: evaluation.listeningScore,
-      readingScore: evaluation.readingScore,
-      speakingScore: evaluation.speakingScore,
-      writingScore: evaluation.writingScore,
-      totalScore: evaluation.totalScore,
-      cefrLevel: evaluation.cefrLevel,
+      listeningScore: evaluated.listeningScore,
+      readingScore: evaluated.readingScore,
+      speakingScore: evaluated.speakingScore,
+      writingScore: evaluated.writingScore,
+      totalScore: evaluated.totalScore,
+      cefrLevel: evaluated.cefrLevel,
     };
 
-    const updatedHistory = [session, ...testHistory].slice(0, 10);
+    const updatedHistory = [newSession, ...testHistory].slice(0, 15);
     setTestHistory(updatedHistory);
     try {
       localStorage.setItem('english_mastery_toeic_history', JSON.stringify(updatedHistory));
-    } catch (e) {
-      console.warn('Lỗi lưu lịch sử TOEIC:', e);
-    }
+    } catch {}
 
-    gainXP(evaluation.totalScore > 500 ? 50 : 30);
-    confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
+    // Thưởng XP theo kết quả
+    const earnedXP = Math.round(evaluated.totalScore / 10);
+    gainXP(earnedXP);
+
     setStage('report');
+    confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
   };
 
-  // 1-Click lưu tất cả từ vựng trong bài thi vào Flashcard SRS
+  // Lưu nhanh tất cả từ vựng trong đề vào Flashcard SRS
   const handleSaveAllKeyVocabToSRS = () => {
-    let count = 0;
+    let addedCount = 0;
+    const existingMap = new Set(vocabularyList.map((w) => w.word.toLowerCase().trim()));
+
     examQuestions.forEach((q) => {
-      if (q.keyVocabulary && q.keyVocabulary.length > 0) {
+      if (q.keyVocabulary) {
         q.keyVocabulary.forEach((v) => {
-          const isExist = vocabularyList.some((w) => w.word.toLowerCase() === v.word.toLowerCase());
-          if (!isExist) {
+          if (!existingMap.has(v.word.toLowerCase().trim())) {
             addCustomWord({
               word: v.word,
               ipa: v.ipa,
               partOfSpeech: 'noun',
               meaning: v.meaning,
-              definitionEn: `Core vocabulary from TOEIC Assessment: ${v.word}.`,
-              example: `Mastering "${v.word}" is essential for achieving a high TOEIC score.`,
-              exampleMeaning: `Thành thạo từ vựng "${v.word}" là yếu tố quan trọng để đạt điểm TOEIC cao.`,
+              definitionEn: `Essential TOEIC Vocabulary in ${q.part}: ${v.word}.`,
+              example: q.audioScript || q.questionText,
+              exampleMeaning: q.vietnameseTranslation,
               tag: 'TOEIC',
             });
-            count++;
+            existingMap.add(v.word.toLowerCase().trim());
+            addedCount++;
           }
         });
       }
     });
 
-    setSavedVocabNotice(`Đã nạp thành công ${count > 0 ? count + ' từ vựng mới' : 'các từ vựng'} vào Flashcard SRS (+${count * 15} XP)!`);
-    confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
-    setTimeout(() => setSavedVocabNotice(null), 4000);
+    setSavedVocabNotice(`Đã lưu thành công +${addedCount} từ vựng bài thi vào kho Flashcard SRS!`);
+    setTimeout(() => setSavedVocabNotice(null), 3500);
   };
 
+  // Format giây thành MM:SS
   const formatTimer = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-16">
+    <div className="max-w-5xl mx-auto space-y-6 pb-16">
       
-      {/* 1. MÀN HÌNH LOBBY & CHỌN CHẾ ĐỘ THI */}
+      {/* 1. MÀN HÌNH SẢNH CHỜ (EXAM LOBBY) */}
       {stage === 'lobby' && (
         <div className="space-y-6">
           
           {/* Header Banner */}
-          <div className="bg-gradient-to-br from-slate-900 via-slate-850 to-slate-950 border border-slate-800 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-3">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-full text-xs font-bold uppercase">
-              <Award className="w-3.5 h-3.5" />
-              <span>Chuẩn Đánh Giá Năng Lực Quốc Tế ETS</span>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-3">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-widest">
+              <Award className="w-4 h-4" />
+              <span>Hệ Thống Đánh Giá & Dự Đoán Điểm Số Chuẩn ETS</span>
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
-              Trung Tâm Đánh Giá Năng Lực TOEIC
+              Khảo Sát Năng Lực TOEIC 2 & 4 Kỹ Năng
             </h1>
 
             <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-              Thi thử mô phỏng format đề thi TOEIC chuẩn ETS, dự đoán thang điểm <strong>10 – 990</strong>, phân tích chi tiết lỗi sai và quy đổi sang khung năng lực Châu Âu <strong>CEFR (A1 - C1)</strong>.
+              Thi thử mô phỏng format đề thi TOEIC chuẩn ETS, dự đoán thang điểm <strong>10 – 990 (LR)</strong> và <strong>0 – 400 (SW)</strong>, phân tích chi tiết lỗi sai và quy đổi sang khung năng lực Châu Âu <strong>CEFR (A1 - C1)</strong>.
             </p>
           </div>
 
@@ -256,7 +270,7 @@ export const ToeicAssessmentView: React.FC = () => {
 
                 <div>
                   <h3 className="text-xl font-black text-white group-hover:text-amber-400 transition-colors">
-                    TOEIC 2 Kỹ Năng (L&R)
+                    TOEIC 2 Kỹ Năng (Listening & Reading)
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
                     Kiểm tra toàn diện <strong>Listening (Part 1 - 4)</strong> và <strong>Reading (Part 5 - 7)</strong>. Thang điểm chuẩn 10 - 990 điểm.
@@ -266,7 +280,7 @@ export const ToeicAssessmentView: React.FC = () => {
                 <div className="space-y-2 text-xs text-slate-300">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>Mini-Test Rút Gọn: <strong>10 - 15 câu / 15 phút</strong></span>
+                    <span>Part 1 Photographs với ảnh trực quan & ẩn văn bản chuẩn ETS</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -305,18 +319,18 @@ export const ToeicAssessmentView: React.FC = () => {
                     TOEIC 4 Kỹ Năng Toàn Diện
                   </h3>
                   <p className="text-xs sm:text-sm text-slate-400 mt-1.5 leading-relaxed">
-                    Bao gồm trọn bộ <strong>Nghe, Đọc, Nói (Speaking qua Mic)</strong> và <strong>Viết (Writing Email công sở)</strong>.
+                    Bao gồm trọn bộ <strong>Listening & Reading (990)</strong> + <strong>Speaking & Writing (400)</strong>.
                   </p>
                 </div>
 
                 <div className="space-y-2 text-xs text-slate-300">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                    <span>Thu âm phát âm Speaking & Phân tích văn phong</span>
+                    <span>Thu âm phát âm Speaking & Chấm điểm theo độ chuẩn</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-cyan-400" />
-                    <span>Viết Email công việc & Chấm điểm chuẩn hóa</span>
+                    <span>Viết Email công sở & Đánh giá độ dài, cấu trúc</span>
                   </div>
                 </div>
               </div>
@@ -339,28 +353,40 @@ export const ToeicAssessmentView: React.FC = () => {
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-4">
               <h3 className="text-lg font-black text-white flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-amber-400" />
-                <span>Lịch Sử Thi Thử & Tiến Bộ Điểm Số</span>
+                <span>Lịch Sử Thi Thử Gần Đây</span>
               </h3>
 
-              <div className="divide-y divide-slate-800">
-                {testHistory.map((item) => (
-                  <div key={item.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center font-black text-amber-400 shrink-0">
-                        {item.totalScore}
-                      </div>
-                      <div>
-                        <span className="font-bold text-white block">{item.title}</span>
-                        <span className="text-slate-500 text-xs">{item.date} • {item.durationMinutes} phút làm bài</span>
+              <div className="space-y-2.5">
+                {testHistory.map((sess) => (
+                  <div 
+                    key={sess.id}
+                    className="p-4 bg-slate-950 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+                  >
+                    <div>
+                      <span className="text-xs font-bold text-slate-300">{sess.title}</span>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>{new Date(sess.date).toLocaleDateString('vi-VN')}</span>
+                        <span>•</span>
+                        <span>{sess.totalQuestions} câu</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <span className="px-2.5 py-1 bg-slate-800 border border-slate-700 rounded-lg font-bold text-slate-300 text-xs">
-                        Nghe: {item.listeningScore} | Đọc: {item.readingScore}
-                      </span>
-                      <span className="px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold rounded-lg text-xs">
-                        CEFR: {item.cefrLevel}
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <span className="text-[11px] text-slate-500 block">Listening + Reading</span>
+                        <strong className="text-lg font-black text-amber-400">{sess.totalScore} / 990</strong>
+                      </div>
+
+                      {sess.speakingScore !== undefined && sess.writingScore !== undefined && (
+                        <div className="text-right border-l border-slate-800 pl-4">
+                          <span className="text-[11px] text-slate-500 block">Speaking + Writing</span>
+                          <strong className="text-lg font-black text-cyan-400">{sess.speakingScore + sess.writingScore} / 400</strong>
+                        </div>
+                      )}
+
+                      <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold">
+                        CEFR {sess.cefrLevel}
                       </span>
                     </div>
                   </div>
@@ -372,11 +398,13 @@ export const ToeicAssessmentView: React.FC = () => {
         </div>
       )}
 
-      {/* 2. MÀN HÌNH PHÒNG THI (EXAM ROOM) */}
+      {/* ========================================================================= */}
+      {/* 2. MÀN HÌNH LÀM BÀI THI (TESTING INTERFACE)                                */}
+      {/* ========================================================================= */}
       {stage === 'testing' && currentQ && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
           
-          {/* Top Bar: Timer, Question Count, Submit Button */}
+          {/* Top Status Bar: Part Badge, Progress, Timer & Submit Button */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div className="flex items-center gap-3">
               <span className="px-3 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-xl text-xs font-black uppercase">
@@ -390,7 +418,7 @@ export const ToeicAssessmentView: React.FC = () => {
             <div className="flex items-center gap-3">
               {/* Countdown Timer */}
               <div className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-mono font-bold text-sm border ${
-                timeLeft < 120 ? 'bg-red-500/20 border-red-500/40 text-red-400 animate-pulse' : 'bg-slate-800 border-slate-700 text-emerald-400'
+                timeLeft < 120 ? 'bg-red-500/20 border-red-500/40 text-red-400 animate-pulse' : 'bg-slate-800 border-slate-750 text-emerald-400'
               }`}>
                 <Clock className="w-4 h-4" />
                 <span>{formatTimer(timeLeft)}</span>
@@ -441,14 +469,18 @@ export const ToeicAssessmentView: React.FC = () => {
                   <Volume2 className="w-5 h-5" />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-white block">Đoạn Audio Nghe ({currentQ.part})</span>
-                  <span className="text-[11px] text-slate-400">Bấm nút để nghe phát âm đề bài</span>
+                  <span className="text-xs font-bold text-white block">
+                    Đoạn Audio Nghe ({currentQ.part === 'part1_photos' ? 'Part 1: Nghe 4 phương án A, B, C, D' : currentQ.part})
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Bấm nút để nghe phát âm bài thi
+                  </span>
                 </div>
               </div>
 
               <button
                 onClick={() => speakWord(currentQ.audioScript || '', audioVoice, audioSpeed)}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all"
+                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-amber-500/20 transition-all hover:scale-105"
               >
                 <Play className="w-3.5 h-3.5 fill-slate-950" />
                 <span>Phát Audio</span>
@@ -463,39 +495,112 @@ export const ToeicAssessmentView: React.FC = () => {
             </div>
           )}
 
-          {/* Question Text */}
-          <div className="space-y-2">
-            <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
-              {currentQ.questionText}
-            </h3>
-          </div>
+          {/* ========================================================================= */}
+          {/* SPECIAL RENDER FOR PART 1: PHOTOGRAPHS (IMAGE + 4 HIDDEN-TEXT CHOICES)   */}
+          {/* ========================================================================= */}
+          {currentQ.part === 'part1_photos' ? (
+            <div className="space-y-6">
+              
+              {/* Question Title Instruction */}
+              <div className="space-y-1">
+                <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
+                  {currentQ.questionText}
+                </h3>
+                <p className="text-xs text-amber-400/90 font-medium">
+                  💡 Format TOEIC chuẩn: Hãy nghe đoạn Audio và click chọn phương án đúng tương ứng (A, B, C, D).
+                </p>
+              </div>
 
-          {/* Standard Multiple Choice Options (A, B, C, D) */}
-          {currentQ.options && (
-            <div className="grid grid-cols-1 gap-2.5">
-              {currentQ.options.map((option, idx) => {
-                const choiceLetter = ['A', 'B', 'C', 'D'][idx];
-                const isSelected = userAnswers[currentQ.id] === choiceLetter;
+              {/* 1. Display Photograph */}
+              {currentQ.imageUrl ? (
+                <div className="relative rounded-3xl overflow-hidden border-2 border-slate-750 bg-slate-950 shadow-2xl max-h-[380px] flex items-center justify-center group">
+                  <img
+                    src={currentQ.imageUrl}
+                    alt="TOEIC Part 1 Photograph"
+                    className="w-full h-auto max-h-[380px] object-cover rounded-2xl transition-transform duration-500 group-hover:scale-[1.02]"
+                    loading="eager"
+                  />
+                  <div className="absolute top-3 left-3 px-3 py-1 bg-slate-950/80 backdrop-blur-md border border-slate-700/80 rounded-xl text-[11px] font-bold text-slate-300 flex items-center gap-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Hình ảnh câu hỏi số {currentQuestionIdx + 1}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full h-56 rounded-3xl bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-500 text-xs">
+                  <ImageIcon className="w-8 h-8 mr-2 opacity-40" />
+                  <span>Ảnh minh họa đề bài đang được tải...</span>
+                </div>
+              )}
 
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => handleSelectAnswer(choiceLetter)}
-                    className={`p-4 rounded-2xl border text-left text-xs sm:text-sm font-medium transition-all flex items-center gap-3 ${
-                      isSelected
-                        ? 'bg-amber-500/15 border-amber-400 text-amber-300 font-bold shadow-md shadow-amber-500/10'
-                        : 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300'
-                    }`}
-                  >
-                    <span className={`w-7 h-7 rounded-lg border flex items-center justify-center font-bold text-xs shrink-0 ${
-                      isSelected ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-slate-400 border-slate-700'
-                    }`}>
-                      {choiceLetter}
-                    </span>
-                    <span className="flex-1 leading-snug">{option}</span>
-                  </button>
-                );
-              })}
+              {/* 2. 4 Clean Choice Buttons (A), (B), (C), (D) without displaying text during test */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Chọn phương án bạn nghe được:
+                </span>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                  {['A', 'B', 'C', 'D'].map((choiceLetter) => {
+                    const isSelected = userAnswers[currentQ.id] === choiceLetter;
+
+                    return (
+                      <button
+                        key={choiceLetter}
+                        onClick={() => handleSelectAnswer(choiceLetter)}
+                        className={`py-4 sm:py-5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1 shadow-md ${
+                          isSelected
+                            ? 'bg-gradient-to-br from-amber-500 to-orange-500 border-amber-400 text-slate-950 font-black shadow-lg shadow-amber-500/25 scale-105 ring-2 ring-amber-400'
+                            : 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-white hover:border-slate-600'
+                        }`}
+                      >
+                        <span className={`text-xl sm:text-2xl font-black ${isSelected ? 'text-slate-950' : 'text-amber-400'}`}>
+                          ({choiceLetter})
+                        </span>
+                        <span className={`text-[11px] font-bold ${isSelected ? 'text-slate-900' : 'text-slate-400'}`}>
+                          {isSelected ? 'Đã Chọn' : 'Bấm để chọn'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+            </div>
+          ) : (
+            /* Standard Multiple Choice Options for Part 2 - 7 */
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <h3 className="text-base sm:text-lg font-bold text-white leading-snug">
+                  {currentQ.questionText}
+                </h3>
+              </div>
+
+              {currentQ.options && (
+                <div className="grid grid-cols-1 gap-2.5">
+                  {currentQ.options.map((option, idx) => {
+                    const choiceLetter = ['A', 'B', 'C', 'D'][idx];
+                    const isSelected = userAnswers[currentQ.id] === choiceLetter;
+
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleSelectAnswer(choiceLetter)}
+                        className={`p-4 rounded-2xl border text-left text-xs sm:text-sm font-medium transition-all flex items-center gap-3 ${
+                          isSelected
+                            ? 'bg-amber-500/15 border-amber-400 text-amber-300 font-bold shadow-md shadow-amber-500/10'
+                            : 'bg-slate-850 hover:bg-slate-800 border-slate-750 text-slate-300'
+                        }`}
+                      >
+                        <span className={`w-7 h-7 rounded-lg border flex items-center justify-center font-bold text-xs shrink-0 ${
+                          isSelected ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-slate-800 text-slate-400 border-slate-700'
+                        }`}>
+                          {choiceLetter}
+                        </span>
+                        <span className="flex-1 leading-snug">{option}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -515,38 +620,44 @@ export const ToeicAssessmentView: React.FC = () => {
                 {isRecording ? <MicOff className="w-7 h-7" /> : <Mic className="w-7 h-7" />}
               </button>
 
-              {speakingTranscript && (
+              {speakingTranscript ? (
                 <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200">
                   Đã thu âm: <strong className="text-cyan-400">"{speakingTranscript}"</strong>
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 italic">
+                  (Nếu bạn bấm câu tiếp mà không thu âm, câu hỏi này sẽ được tính 0 điểm)
                 </div>
               )}
             </div>
           )}
 
-          {/* Writing Input Interface (If Skill is Writing) */}
+          {/* Writing Email Interface (If Skill is Writing) */}
           {currentQ.skill === 'writing' && (
-            <div className="space-y-2">
+            <div className="space-y-3">
+              <span className="text-xs font-bold text-slate-400">Soạn thảo email trả lời:</span>
               <textarea
                 value={writingInput}
                 onChange={(e) => {
                   setWritingInput(e.target.value);
                   setUserAnswers((prev) => ({ ...prev, [currentQ.id]: e.target.value }));
                 }}
-                placeholder="Viết nội dung email phản hồi tại đây (50 - 100 từ)..."
-                rows={5}
-                className="w-full bg-slate-950 border border-slate-750 focus:border-cyan-500 rounded-2xl p-4 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+                rows={6}
+                placeholder="Dear Mr. Davis, Thank you for contacting our support team..."
+                className="w-full bg-slate-950 border border-slate-750 focus:border-cyan-500 rounded-2xl p-4 text-xs sm:text-sm text-white placeholder-slate-600 focus:outline-none leading-relaxed"
               />
-              <div className="flex justify-end text-[11px] text-slate-500">
-                <span>Số từ: {writingInput.trim() ? writingInput.trim().split(/\s+/).length : 0} từ</span>
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>Số từ: <strong className="text-white">{writingInput.trim().split(/\s+/).filter(Boolean).length}</strong> từ</span>
+                <span>(Bỏ trống = 0 điểm)</span>
               </div>
             </div>
           )}
 
-          {/* Navigation Prev / Next Buttons */}
+          {/* Navigation Controls: Previous / Next Question */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-800">
             <button
-              onClick={() => setCurrentQuestionIdx((prev) => Math.max(0, prev - 1))}
               disabled={currentQuestionIdx === 0}
+              onClick={() => setCurrentQuestionIdx((prev) => prev - 1)}
               className="px-5 py-2.5 bg-slate-800 hover:bg-slate-750 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 font-bold rounded-xl text-xs transition-all"
             >
               Câu Trước
@@ -573,7 +684,9 @@ export const ToeicAssessmentView: React.FC = () => {
         </div>
       )}
 
-      {/* 3. MÀN HÌNH BÁO CÁO KẾT QUẢ (SCORE REPORT) */}
+      {/* ========================================================================= */}
+      {/* 3. MÀN HÌNH BÁO CÁO KẾT QUẢ & REVIEW CHI TIẾT (SCORE REPORT)              */}
+      {/* ========================================================================= */}
       {stage === 'report' && scoreResult && (
         <div className="space-y-6">
           
@@ -593,43 +706,128 @@ export const ToeicAssessmentView: React.FC = () => {
               </p>
             </div>
 
-            {/* Total Score Badge */}
-            <div className="py-4">
-              <div className="inline-block p-6 bg-slate-950/80 border border-amber-500/40 rounded-3xl shadow-xl">
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Tổng Điểm TOEIC Đạt Được</span>
-                <span className="text-5xl sm:text-6xl font-black bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 bg-clip-text text-transparent">
-                  {scoreResult.totalScore}
-                </span>
-                <span className="text-xs text-slate-400 block mt-1">/ 990 thang điểm chuẩn</span>
-              </div>
-            </div>
+            {/* ========================================================================= */}
+            {/* SCORE DISPLAY: SEPARATE 2-SKILLS (990) VS 4-SKILLS (990 + 400)           */}
+            {/* ========================================================================= */}
+            {!scoreResult.is4Skills ? (
+              /* TOEIC 2 Kỹ Năng LR (Thang 990 duy nhất) */
+              <div className="space-y-6">
+                <div className="py-2">
+                  <div className="inline-block p-6 sm:p-8 bg-slate-950/80 border border-amber-500/40 rounded-3xl shadow-xl">
+                    <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                      Tổng Điểm TOEIC (Listening + Reading)
+                    </span>
+                    <span className="text-5xl sm:text-6xl font-black bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 bg-clip-text text-transparent">
+                      {scoreResult.totalScore}
+                    </span>
+                    <span className="text-xs text-slate-400 block mt-1">/ 990 thang điểm chuẩn ETS</span>
+                  </div>
+                </div>
 
-            {/* Skill Breakdown Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                <span className="text-[11px] text-slate-400 block">Listening</span>
-                <strong className="text-xl sm:text-2xl font-black text-white">{scoreResult.listeningScore}</strong>
-                <span className="text-[10px] text-slate-500 block">/ 495 điểm</span>
-              </div>
+                {/* 2 Kỹ Năng Component Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mx-auto">
+                  <div className="p-5 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-left">
+                      <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl">
+                        <Headphones className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-400 font-semibold block">Listening (Nghe Hiểu)</span>
+                        <span className="text-[11px] text-slate-500">Đúng {scoreResult.listeningCorrect}/{scoreResult.listeningTotal} câu</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <strong className="text-2xl font-black text-white">{scoreResult.listeningScore}</strong>
+                      <span className="text-[10px] text-slate-500 block">/ 495</span>
+                    </div>
+                  </div>
 
-              <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                <span className="text-[11px] text-slate-400 block">Reading</span>
-                <strong className="text-xl sm:text-2xl font-black text-white">{scoreResult.readingScore}</strong>
-                <span className="text-[10px] text-slate-500 block">/ 495 điểm</span>
+                  <div className="p-5 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-left">
+                      <div className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl">
+                        <BookOpen className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <span className="text-xs text-slate-400 font-semibold block">Reading (Đọc Hiểu)</span>
+                        <span className="text-[11px] text-slate-500">Đúng {scoreResult.readingCorrect}/{scoreResult.readingTotal} câu</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <strong className="text-2xl font-black text-white">{scoreResult.readingScore}</strong>
+                      <span className="text-[10px] text-slate-500 block">/ 495</span>
+                    </div>
+                  </div>
+                </div>
               </div>
+            ) : (
+              /* TOEIC 4 Kỹ Năng: Hiển thị song song 2 bảng LR (990) và SW (400) */
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                
+                {/* Certificate 1: TOEIC Listening & Reading (990) */}
+                <div className="p-6 bg-slate-950/90 border border-amber-500/30 rounded-3xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div>
+                      <span className="text-xs font-bold text-amber-400 block uppercase">Chứng Chỉ 1</span>
+                      <h4 className="text-base font-black text-white">TOEIC Listening & Reading</h4>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-2xl font-black text-amber-400">{scoreResult.totalScore}</span>
+                      <span className="text-[10px] text-slate-500 block">/ 990</span>
+                    </div>
+                  </div>
 
-              <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                <span className="text-[11px] text-slate-400 block">Speaking</span>
-                <strong className="text-xl sm:text-2xl font-black text-cyan-400">{scoreResult.speakingScore || 160}</strong>
-                <span className="text-[10px] text-slate-500 block">/ 200 điểm</span>
-              </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[11px]">Listening</span>
+                      <strong className="text-lg font-black text-white">{scoreResult.listeningScore}</strong>
+                      <span className="text-slate-500 text-[10px] block">Đúng {scoreResult.listeningCorrect}/{scoreResult.listeningTotal}</span>
+                    </div>
+                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[11px]">Reading</span>
+                      <strong className="text-lg font-black text-white">{scoreResult.readingScore}</strong>
+                      <span className="text-slate-500 text-[10px] block">Đúng {scoreResult.readingCorrect}/{scoreResult.readingTotal}</span>
+                    </div>
+                  </div>
+                </div>
 
-              <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-2xl">
-                <span className="text-[11px] text-slate-400 block">Writing</span>
-                <strong className="text-xl sm:text-2xl font-black text-cyan-400">{scoreResult.writingScore || 150}</strong>
-                <span className="text-[10px] text-slate-500 block">/ 200 điểm</span>
+                {/* Certificate 2: TOEIC Speaking & Writing (400) */}
+                <div className="p-6 bg-slate-950/90 border border-cyan-500/30 rounded-3xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div>
+                      <span className="text-xs font-bold text-cyan-400 block uppercase">Chứng Chỉ 2</span>
+                      <h4 className="text-base font-black text-white">TOEIC Speaking & Writing</h4>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-2xl font-black text-cyan-400">{scoreResult.totalSWScore || 0}</span>
+                      <span className="text-[10px] text-slate-500 block">/ 400</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[11px]">Speaking (Mic)</span>
+                      <strong className={`text-lg font-black ${scoreResult.speakingScore ? 'text-cyan-300' : 'text-slate-500'}`}>
+                        {scoreResult.speakingScore || 0}
+                      </strong>
+                      <span className="text-slate-500 text-[10px] block">/ 200 điểm</span>
+                    </div>
+                    <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                      <span className="text-slate-400 block text-[11px]">Writing (Email)</span>
+                      <strong className={`text-lg font-black ${scoreResult.writingScore ? 'text-cyan-300' : 'text-slate-500'}`}>
+                        {scoreResult.writingScore || 0}
+                      </strong>
+                      <span className="text-slate-500 text-[10px] block">{scoreResult.writingWordCount || 0} từ / 200 điểm</span>
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-slate-400 space-y-1 pt-1">
+                    {scoreResult.speakingFeedback && <p>🎙️ <strong>Nói:</strong> {scoreResult.speakingFeedback}</p>}
+                    {scoreResult.writingFeedback && <p>✍️ <strong>Viết:</strong> {scoreResult.writingFeedback}</p>}
+                  </div>
+                </div>
+
               </div>
-            </div>
+            )}
 
             {/* CEFR Level & Roadmap */}
             <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-left space-y-1.5 text-xs text-slate-200">
@@ -675,53 +873,150 @@ export const ToeicAssessmentView: React.FC = () => {
               <span>Phân Tích Chi Tiết & Lời Giải Thích Từng Câu</span>
             </h3>
 
-            <div className="space-y-4 divide-y divide-slate-800">
+            <div className="space-y-6 divide-y divide-slate-800">
               {examQuestions.map((q, idx) => {
                 const userChoice = userAnswers[q.id];
-                const isCorrect = userChoice === q.correctAnswer;
+                const isSkipped = !userChoice || userChoice.trim() === '' || userChoice === 'SKIPPED';
+                const isCorrect = !isSkipped && userChoice === q.correctAnswer;
+                const isSpeakingQuestion = q.skill === 'speaking';
+                const isWritingQuestion = q.skill === 'writing';
 
                 return (
-                  <div key={q.id} className="pt-4 space-y-3">
+                  <div key={q.id} className="pt-6 space-y-4">
+                    
+                    {/* Header Question Review */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-amber-400">Câu {idx + 1} ({q.part})</span>
+                          <span className="text-xs font-black text-amber-400">Câu {idx + 1} ({q.part.toUpperCase()})</span>
                           <span className="text-xs text-slate-500">•</span>
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
-                            isCorrect ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'
-                          }`}>
-                            {isCorrect ? 'Đúng' : 'Chưa đúng'}
-                          </span>
+                          
+                          {/* Badge Status */}
+                          {isSpeakingQuestion ? (
+                            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border ${
+                              speakingTranscript ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'
+                            }`}>
+                              {speakingTranscript ? `🎙️ Đã thu âm (${scoreResult.speakingScore}/200đ)` : '⚪ Chưa thu âm (0đ)'}
+                            </span>
+                          ) : isWritingQuestion ? (
+                            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border ${
+                              writingInput ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'
+                            }`}>
+                              {writingInput ? `✍️ Đã viết email (${scoreResult.writingScore}/200đ)` : '⚪ Chưa viết (0đ)'}
+                            </span>
+                          ) : isSkipped ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg border bg-slate-800 text-slate-400 border-slate-700">
+                              ⚪ Chưa làm / Bỏ qua (0đ)
+                            </span>
+                          ) : isCorrect ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg border bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                              ✓ Chính xác
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-lg border bg-red-500/20 text-red-400 border-red-500/30">
+                              ✗ Chưa chính xác
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs sm:text-sm font-bold text-white">{q.questionText}</p>
                       </div>
                     </div>
 
-                    {/* Result Choices Comparison */}
-                    <div className="p-3 bg-slate-850 rounded-xl space-y-1.5 text-xs text-slate-300">
-                      <p>
-                        Đáp án của bạn: <strong className={isCorrect ? 'text-emerald-400' : 'text-red-400'}>{userChoice || 'Chưa chọn'}</strong>
-                        {!isCorrect && q.correctAnswer && (
-                          <span className="ml-3">
-                            → Đáp án đúng: <strong className="text-emerald-400">{q.correctAnswer}</strong>
-                          </span>
-                        )}
+                    {/* If Part 1: Display Photograph Thumbnail */}
+                    {q.part === 'part1_photos' && q.imageUrl && (
+                      <div className="rounded-2xl overflow-hidden border border-slate-800 bg-slate-950 max-w-sm">
+                        <img
+                          src={q.imageUrl}
+                          alt="Part 1 Question Photo"
+                          className="w-full h-48 object-cover"
+                        />
+                      </div>
+                    )}
+
+                    {/* Full Transcript of Options (Revealed during Review) */}
+                    {q.options && (
+                      <div className="space-y-1.5">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Transcript 4 Phương Án (A, B, C, D):
+                        </span>
+                        <div className="grid grid-cols-1 gap-2">
+                          {q.options.map((opt, optIdx) => {
+                            const letter = ['A', 'B', 'C', 'D'][optIdx];
+                            const isCorrectOpt = letter === q.correctAnswer;
+                            const isUserChosen = letter === userChoice;
+
+                            return (
+                              <div
+                                key={optIdx}
+                                className={`p-3 rounded-xl border text-xs leading-relaxed flex items-start justify-between gap-3 ${
+                                  isCorrectOpt
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-bold ring-1 ring-emerald-500/30'
+                                    : isUserChosen
+                                    ? 'bg-red-500/15 border-red-500/40 text-red-300 font-medium'
+                                    : 'bg-slate-950 border-slate-850 text-slate-400'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[11px] ${
+                                    isCorrectOpt ? 'bg-emerald-500 text-slate-950' : isUserChosen ? 'bg-red-500 text-white' : 'bg-slate-800 text-slate-400'
+                                  }`}>
+                                    {letter}
+                                  </span>
+                                  <span>{opt}</span>
+                                </div>
+
+                                <div className="shrink-0 text-[11px]">
+                                  {isCorrectOpt && <span className="text-emerald-400 font-extrabold">✓ Đáp Án Đúng</span>}
+                                  {isUserChosen && !isCorrectOpt && <span className="text-red-400 font-bold">✗ Bạn đã chọn</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Speaking / Writing User Input Display */}
+                    {isSpeakingQuestion && (
+                      <div className="p-3.5 bg-slate-850 border border-slate-800 rounded-xl text-xs text-slate-300 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-400 block">Bản ghi âm giọng nói của bạn:</span>
+                        <p className={speakingTranscript ? 'text-cyan-300 font-mono italic' : 'text-slate-500 italic'}>
+                          {speakingTranscript ? `"${speakingTranscript}"` : 'Bạn đã bỏ qua phần thu âm (0/200 điểm).'}
+                        </p>
+                      </div>
+                    )}
+
+                    {isWritingQuestion && (
+                      <div className="p-3.5 bg-slate-850 border border-slate-800 rounded-xl text-xs text-slate-300 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-400 block">Nội dung email bạn đã soạn thảo:</span>
+                        <p className={writingInput ? 'text-white whitespace-pre-line' : 'text-slate-500 italic'}>
+                          {writingInput || 'Bạn đã bỏ qua phần viết email (0/200 điểm).'}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Result Explanation & Vietnamese Translation */}
+                    <div className="p-4 bg-slate-850 border border-slate-800 rounded-2xl space-y-2 text-xs text-slate-300">
+                      <p className="text-amber-300/90 leading-relaxed font-medium">
+                        💡 <strong>Giải thích chi tiết:</strong> {q.explanation}
                       </p>
-                      <p className="text-slate-400 italic">💡 Giải thích: {q.explanation}</p>
-                      <p className="text-[11px] text-slate-500">Bản dịch: {q.vietnameseTranslation}</p>
+                      <p className="text-slate-400 italic">
+                        🌐 <strong>Bản dịch tiếng Việt:</strong> {q.vietnameseTranslation}
+                      </p>
                     </div>
 
                     {/* Key Vocabulary Pills */}
                     {q.keyVocabulary && q.keyVocabulary.length > 0 && (
                       <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <span className="text-[10px] text-slate-500 uppercase font-bold">Từ vựng quan trọng:</span>
+                        <span className="text-[10px] text-slate-500 uppercase font-bold">Từ vựng then chốt:</span>
                         {q.keyVocabulary.map((v, vIdx) => (
-                          <span key={vIdx} className="px-2.5 py-0.5 bg-slate-800 border border-slate-700 text-teal-300 rounded-lg text-xs font-mono">
-                            {v.word} ({v.ipa}) : {v.meaning}
+                          <span key={vIdx} className="px-2.5 py-1 bg-slate-800 border border-slate-700 text-teal-300 rounded-lg text-xs font-mono">
+                            {v.word} ({v.ipa}): <strong className="text-white">{v.meaning}</strong>
                           </span>
                         ))}
                       </div>
                     )}
+
                   </div>
                 );
               })}

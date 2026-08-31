@@ -9,14 +9,15 @@ import {
   Key, 
   Sparkles, 
   Lightbulb, 
-  Check, 
   RotateCcw, 
   X, 
-  Info,
-  ChevronDown,
-  ChevronUp,
-  User,
-  ShieldCheck
+  ChevronDown, 
+  ChevronUp, 
+  User, 
+  ShieldCheck, 
+  CheckCircle2, 
+  ListOrdered, 
+  MessageSquareQuote 
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { speakWord, createSpeechRecognizer } from '../services/speechService';
@@ -32,8 +33,7 @@ export const AITutorView: React.FC = () => {
     setGeminiApiKey, 
     audioVoice, 
     audioSpeed, 
-    gainXP, 
-    profile 
+    gainXP 
   } = useAppStore();
 
   const [selectedScenario, setSelectedScenario] = useState<RoleplayScenario>(ROLEPLAY_SCENARIOS[0]);
@@ -94,24 +94,18 @@ export const AITutorView: React.FC = () => {
         historyFormatted
       );
 
-      // Cập nhật feedback vào tin nhắn của user
-      if (res.feedback) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === userMsgId ? { ...m, feedback: res.feedback } : m))
-        );
-        setExpandedFeedbackId(userMsgId);
-      }
-
-      // Thêm tin nhắn phản hồi của AI
+      const aiMsgId = `ai_${Date.now()}`;
+      // Gắn feedback trực tiếp vào phản hồi của AI (bên trái)
       const aiMsg: ChatMessage = {
-        id: `ai_${Date.now()}`,
+        id: aiMsgId,
         sender: 'ai',
         text: res.reply,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        feedback: res.feedback,
       };
 
       setMessages((prev) => [...prev, aiMsg]);
-      gainXP(10);
+      gainXP(15);
     } catch (err) {
       console.error('Lỗi sinh phản hồi AI:', err);
     } finally {
@@ -173,10 +167,10 @@ export const AITutorView: React.FC = () => {
           <div>
             <h2 className="text-xl sm:text-2xl font-black text-white flex items-center gap-2.5">
               <Bot className="w-6 h-6 text-cyan-400" />
-              <span>AI Tutor: Luyện Hội Thoại Nhập Vai</span>
+              <span>AI Roleplay: Hội Thoại Nhập Vai Tình Huống</span>
             </h2>
             <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              Nhập vai tình huống thực tế, AI phản hồi tự nhiên & phân tích sửa lỗi ngữ pháp từng câu
+              Phỏng vấn Tech • Họp Daily Standup • Tiếng Anh du lịch • Phản hồi & sửa lỗi C1/C2 thời gian thực
             </p>
           </div>
 
@@ -194,7 +188,7 @@ export const AITutorView: React.FC = () => {
               }`}
             >
               <Key className="w-3.5 h-3.5" />
-              <span>{geminiApiKey ? 'Gemini API: Đã kết nối' : 'Cài đặt API Key'}</span>
+              <span>{geminiApiKey ? 'Gemini AI: Đã kết nối' : 'Cài đặt API Key'}</span>
             </button>
 
             {/* Reset Chat Button */}
@@ -208,48 +202,73 @@ export const AITutorView: React.FC = () => {
           </div>
         </div>
 
-        {/* Scenario Pill Badges */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-          {ROLEPLAY_SCENARIOS.map((sc) => {
-            const isSelected = selectedScenario.id === sc.id;
-            return (
-              <button
-                key={sc.id}
-                onClick={() => setSelectedScenario(sc)}
-                className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${
-                  isSelected
-                    ? 'bg-cyan-500/15 border-cyan-400 text-cyan-300 shadow-md shadow-cyan-500/10'
-                    : 'bg-slate-850/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
-                }`}
-              >
-                <span className="text-base">{sc.icon}</span>
-                <span>{sc.title}</span>
-              </button>
-            );
-          })}
+        {/* 5 Scenario Pill Badges */}
+        <div className="space-y-1.5">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+            Chọn Kịch Bản Nhập Vai (Scenario Selector):
+          </span>
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            {ROLEPLAY_SCENARIOS.map((sc) => {
+              const isSelected = selectedScenario.id === sc.id;
+              return (
+                <button
+                  key={sc.id}
+                  onClick={() => setSelectedScenario(sc)}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-2 border ${
+                    isSelected
+                      ? 'bg-cyan-500/15 border-cyan-400 text-cyan-300 shadow-md shadow-cyan-500/10 ring-1 ring-cyan-400/40'
+                      : 'bg-slate-850/80 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                  }`}
+                >
+                  <span className="text-base">{sc.icon}</span>
+                  <span>{sc.title}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Scenario Info Bar */}
-        <div className="p-3.5 bg-slate-850/90 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-300">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-400 font-bold rounded-lg border border-cyan-500/30">
-              {selectedScenario.badge}
-            </span>
-            <span>
-              Bạn đóng vai: <strong className="text-white">{selectedScenario.role}</strong> • AI đóng vai: <strong className="text-cyan-400">{selectedScenario.aiRole}</strong>
+        {/* Scenario Roles & Guided Steps Checklist */}
+        <div className="p-4 bg-slate-850 border border-slate-800 rounded-2xl space-y-3 text-xs">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 bg-cyan-500/20 text-cyan-400 font-bold rounded-lg border border-cyan-500/30">
+                {selectedScenario.badge}
+              </span>
+              <span className="text-slate-300">
+                Bạn: <strong className="text-white">{selectedScenario.role}</strong> • AI: <strong className="text-cyan-400">{selectedScenario.aiRole}</strong>
+              </span>
+            </div>
+            <span className="text-slate-400 italic text-[11px]">
+              {selectedScenario.description}
             </span>
           </div>
-          <span className="text-slate-400 italic text-[11px]">
-            {selectedScenario.description}
-          </span>
+
+          {/* Guided Steps */}
+          {selectedScenario.steps && (
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-slate-400 flex items-center gap-1.5">
+                <ListOrdered className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Lộ trình hội thoại định hướng theo bước (Scenario Flow):</span>
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] text-slate-300">
+                {selectedScenario.steps.map((step, idx) => (
+                  <div key={idx} className="flex items-start gap-1.5 p-1.5 bg-slate-900/60 rounded-lg border border-slate-800">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
+                    <span>{step}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* 2. Main Chat Message Container */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4 min-h-[480px] max-h-[580px] overflow-y-auto flex flex-col justify-between">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-4 sm:p-6 shadow-2xl space-y-4 min-h-[460px] max-h-[580px] overflow-y-auto flex flex-col justify-between">
         
         {/* Message Stream */}
-        <div className="space-y-4">
+        <div className="space-y-5">
           {messages.map((msg) => {
             const isUser = msg.sender === 'user';
             const isFeedbackExpanded = expandedFeedbackId === msg.id;
@@ -262,31 +281,38 @@ export const AITutorView: React.FC = () => {
                 className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
               >
                 {/* Bubble message */}
-                <div className="flex items-start gap-2.5 max-w-[88%] sm:max-w-[80%]">
-                  {!isUser && (
-                    <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0 mt-0.5">
+                <div className={`flex items-start gap-2.5 max-w-[88%] sm:max-w-[82%] ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                  
+                  {/* Avatar Icon */}
+                  {!isUser ? (
+                    <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
                       <Bot className="w-4 h-4" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
+                      <User className="w-4 h-4" />
                     </div>
                   )}
 
+                  {/* Message Content Bubble */}
                   <div className="space-y-1">
                     <div
                       className={`p-4 rounded-3xl text-sm sm:text-base leading-relaxed ${
                         isUser
-                          ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-br-none shadow-lg'
-                          : 'bg-slate-800 text-slate-100 rounded-bl-none border border-slate-700 shadow-md'
+                          ? 'bg-gradient-to-r from-emerald-600 to-teal-500 text-white rounded-br-none shadow-lg shadow-emerald-600/15'
+                          : 'bg-slate-800 text-slate-100 rounded-bl-none border border-slate-700/80 shadow-md'
                       }`}
                     >
                       <p>{msg.text}</p>
                     </div>
 
-                    <div className={`flex items-center gap-2 text-[10px] text-slate-500 px-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`flex items-center gap-2 text-[10px] text-slate-500 px-1.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
                       <span>{msg.timestamp}</span>
                       {!isUser && (
                         <button
                           onClick={() => speakWord(msg.text, audioVoice, audioSpeed)}
                           title="Nghe phát âm AI"
-                          className="hover:text-cyan-400 transition-colors flex items-center gap-0.5"
+                          className="hover:text-cyan-400 transition-colors flex items-center gap-0.5 font-medium"
                         >
                           <Volume2 className="w-3 h-3" />
                           <span>Nghe</span>
@@ -295,16 +321,13 @@ export const AITutorView: React.FC = () => {
                     </div>
                   </div>
 
-                  {isUser && (
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-                      <User className="w-4 h-4" />
-                    </div>
-                  )}
                 </div>
 
-                {/* Grammar & Vocabulary Feedback Box for User's message - Aligned neatly below user bubble */}
-                {isUser && msg.feedback && (
-                  <div className="w-full max-w-[88%] sm:max-w-[80%] mt-1.5 pr-10">
+                {/* ========================================================================= */}
+                {/* AI FEEDBACK ACCORDION: ALIGNED LEFT UNDER AI MESSAGE (MAX-W-[82%])        */}
+                {/* ========================================================================= */}
+                {!isUser && msg.feedback && (
+                  <div className="w-full max-w-[88%] sm:max-w-[82%] pl-10 mt-2">
                     <div className="bg-slate-950/90 border border-amber-500/30 rounded-2xl p-3 space-y-2 shadow-lg">
                       <div 
                         onClick={() => setExpandedFeedbackId(isFeedbackExpanded ? null : msg.id)}
@@ -312,11 +335,16 @@ export const AITutorView: React.FC = () => {
                       >
                         <div className="flex items-center gap-1.5">
                           <Lightbulb className="w-4 h-4 text-amber-400 shrink-0" />
-                          <span>💡 Góp ý sửa lỗi & cách dùng từ hay hơn</span>
+                          <span>💡 Xem nhận xét ngữ pháp & từ vựng gợi ý (C1/C2)</span>
                         </div>
-                        {isFeedbackExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        {isFeedbackExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-amber-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        )}
                       </div>
 
+                      {/* Expanded Feedback Details */}
                       {isFeedbackExpanded && (
                         <motion.div
                           initial={{ opacity: 0, height: 0 }}
@@ -324,18 +352,20 @@ export const AITutorView: React.FC = () => {
                           className="pt-2 border-t border-slate-800/80 space-y-2.5 text-xs text-slate-300"
                         >
                           {/* Correction */}
-                          <div>
-                            <span className="text-[11px] font-semibold text-slate-400">Câu sửa chuẩn ngữ pháp:</span>
-                            <p className="font-semibold text-emerald-400 bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20 mt-0.5">
-                              {msg.feedback.correction}
-                            </p>
-                          </div>
+                          {msg.feedback.correction && (
+                            <div>
+                              <span className="text-[11px] font-semibold text-slate-400">Câu sửa chuẩn ngữ pháp:</span>
+                              <p className="font-semibold text-emerald-400 bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20 mt-0.5">
+                                {msg.feedback.correction}
+                              </p>
+                            </div>
+                          )}
 
                           {/* Explanation */}
                           {msg.feedback.explanation && (
                             <div>
-                              <span className="text-[11px] font-semibold text-slate-400">Giải thích:</span>
-                              <p className="text-slate-300 mt-0.5 italic">
+                              <span className="text-[11px] font-semibold text-slate-400">Giải thích chi tiết:</span>
+                              <p className="text-slate-300 mt-0.5 italic leading-relaxed">
                                 {msg.feedback.explanation}
                               </p>
                             </div>
@@ -369,6 +399,7 @@ export const AITutorView: React.FC = () => {
                     </div>
                   </div>
                 )}
+
               </motion.div>
             );
           })}
@@ -376,15 +407,36 @@ export const AITutorView: React.FC = () => {
           {isLoading && (
             <div className="flex items-center gap-2 text-xs text-cyan-400 p-2">
               <Sparkles className="w-4 h-4 animate-spin" />
-              <span>AI Tutor đang suy nghĩ và phân tích phản hồi...</span>
+              <span>AI Tutor đang phân tích ngữ cảnh và chuẩn bị câu trả lời...</span>
             </div>
           )}
 
           <div ref={messagesEndRef} />
         </div>
 
-        {/* 3. Input & Voice Controls */}
-        <div className="pt-4 border-t border-slate-800">
+        {/* 3. Quick Suggested Prompts Chips */}
+        {selectedScenario.suggestedPrompts && (
+          <div className="pt-2">
+            <span className="text-[11px] text-slate-500 block mb-1 font-semibold flex items-center gap-1">
+              <MessageSquareQuote className="w-3 h-3 text-cyan-400" />
+              <span>Gợi ý câu phản hồi nhanh:</span>
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {selectedScenario.suggestedPrompts.map((prompt, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setInputText(prompt)}
+                  className="px-2.5 py-1 bg-slate-850 hover:bg-slate-800 border border-slate-750 text-slate-300 hover:text-cyan-300 rounded-xl text-[11px] transition-all text-left truncate max-w-full"
+                >
+                  "{prompt.slice(0, 60)}..."
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 4. Input & Voice Controls */}
+        <div className="pt-3 border-t border-slate-800">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -413,7 +465,7 @@ export const AITutorView: React.FC = () => {
               onChange={(e) => setInputText(e.target.value)}
               placeholder={isRecording ? '🎙️ Đang lắng nghe giọng nói của bạn...' : 'Gõ câu trả lời tiếng Anh hoặc bấm Mic...'}
               disabled={isLoading}
-              className="flex-1 bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-2xl px-5 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+              className="flex-1 bg-slate-950 border border-slate-750 focus:border-cyan-500 rounded-2xl px-5 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
             />
 
             {/* Send button */}
@@ -429,7 +481,7 @@ export const AITutorView: React.FC = () => {
 
       </div>
 
-      {/* 4. API Key Configuration Modal */}
+      {/* 5. API Key Configuration Modal */}
       <AnimatePresence>
         {isKeyModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
@@ -486,7 +538,7 @@ export const AITutorView: React.FC = () => {
                   value={tempApiKey}
                   onChange={(e) => setTempApiKey(e.target.value)}
                   placeholder="AIzaSy..."
-                  className="w-full bg-slate-950 border border-slate-700 focus:border-cyan-500 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none font-mono"
+                  className="w-full bg-slate-950 border border-slate-750 focus:border-cyan-500 rounded-2xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none font-mono"
                 />
               </div>
 

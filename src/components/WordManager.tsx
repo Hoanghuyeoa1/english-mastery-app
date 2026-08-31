@@ -119,11 +119,11 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
         <div className="flex items-center flex-wrap gap-2.5 w-full sm:w-auto">
           <button
             onClick={handleManualSync}
-            title="Đồng bộ nạp đầy đủ 5.000 từ vựng cốt lõi"
+            title="Đồng bộ nạp đầy đủ 10.000+ từ vựng cốt lõi"
             className="flex items-center gap-1.5 px-3.5 py-3 bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm whitespace-nowrap"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Nạp 5.000 từ</span>
+            <span>Nạp 10.000+ từ</span>
           </button>
 
           <button
@@ -159,7 +159,7 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm kiếm siêu tốc trong 5.000 từ vựng theo từ, nghĩa, IPA..."
+            placeholder="Tìm kiếm siêu tốc trong 10.000+ từ vựng theo từ, nghĩa, IPA, cấp độ..."
             className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
           />
         </div>

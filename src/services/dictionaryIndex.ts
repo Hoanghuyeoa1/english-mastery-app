@@ -1,5 +1,5 @@
 import { VocabWord, VocabTag } from '../types';
-import { VOCAB_1000_BANK } from '../data/defaultVocab';
+import { VOCAB_10000_BANK } from '../data/defaultVocab';
 import { EXTENDED_DICTIONARY_DATA } from '../data/fullDictionaryData';
 
 export interface DictionarySearchResult {
@@ -7,7 +7,7 @@ export interface DictionarySearchResult {
   matchType: 'exact' | 'prefix' | 'contains' | 'meaning';
 }
 
-// Hợp nhất bộ từ 1000 và bộ mở rộng 3000+ thành Siêu Từ Điển Toàn Diện
+// Hợp nhất Siêu Từ Điển Toàn Diện 10.500+ từ
 let _combinedDictionary: VocabWord[] = [];
 const _wordMap = new Map<string, VocabWord>();
 const _prefixIndex = new Map<string, number[]>(); // prefix -> array of indices in _combinedDictionary
@@ -17,8 +17,8 @@ function initializeDictionary() {
 
   const map = new Map<string, VocabWord>();
 
-  // 1. Thêm bộ từ cốt lõi
-  VOCAB_1000_BANK.forEach((w) => {
+  // 1. Thêm bộ 10.000+ từ cốt lõi
+  VOCAB_10000_BANK.forEach((w) => {
     map.set(w.word.toLowerCase().trim(), w);
   });
 

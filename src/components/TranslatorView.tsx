@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Languages, 
   ArrowLeftRight, 
@@ -9,14 +9,7 @@ import {
   Sparkles, 
   X, 
   Lightbulb, 
-  Briefcase, 
-  Code, 
-  GraduationCap, 
-  Coffee, 
-  History, 
-  Key, 
-  ShieldCheck,
-  Bookmark
+  History
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
@@ -24,14 +17,13 @@ import { speakWord } from '../services/speechService';
 import { 
   translateWithContext, 
   TranslationTone, 
-  ContextAwareTranslationResult,
+  TranslationResult,
   TranslationHistoryItem 
 } from '../services/aiTranslationService';
 
 export const TranslatorView: React.FC = () => {
   const { 
     addCustomWord, 
-    vocabularyList, 
     audioVoice, 
     audioSpeed, 
     geminiApiKey 
@@ -43,8 +35,8 @@ export const TranslatorView: React.FC = () => {
   const [selectedTone, setSelectedTone] = useState<TranslationTone>('tech');
   
   // Translation Results State
-  const [translationResult, setTranslationResult] = useState<ContextAwareTranslationResult | null>(null);
-  const [activeOutputTab, setActiveOutputTab] = useState<'main' | 'formal' | 'casual'>('main');
+  const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null);
+  const [activeOutputTab, setActiveOutputTab] = useState<'standard' | 'formal' | 'casual'>('standard');
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
@@ -59,9 +51,17 @@ export const TranslatorView: React.FC = () => {
     }
   });
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Kích hoạt dịch thuật theo ngữ cảnh
-  const handleExecuteTranslate = async (textToTranslate = sourceText, tone = selectedTone) => {
-    if (!textToTranslate.trim()) {
+  const handleExecuteTranslate = async (
+    textToTranslate = sourceText, 
+    tone = selectedTone,
+    sLang = sourceLang,
+    tLang = targetLang
+  ) => {
+    const clean = textToTranslate.trim();
+    if (!clean) {
       setTranslationResult(null);
       return;
     }
@@ -69,23 +69,22 @@ export const TranslatorView: React.FC = () => {
     setLoading(true);
     try {
       const result = await translateWithContext(
-        textToTranslate,
-        sourceLang,
-        targetLang,
+        clean,
+        sLang,
+        tLang,
         tone,
         geminiApiKey
       );
       setTranslationResult(result);
-      setActiveOutputTab('main');
 
       // Thêm vào lịch sử nếu câu hợp lệ
-      if (result.mainTranslation) {
+      if (result.standard) {
         const item: TranslationHistoryItem = {
           id: `trans_${Date.now()}`,
-          sourceText: textToTranslate.trim(),
-          translatedText: result.mainTranslation,
-          sourceLang,
-          targetLang,
+          sourceText: clean,
+          translatedText: result.standard,
+          sourceLang: sLang,
+          targetLang: tLang,
           tone,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         };
@@ -112,12 +111,20 @@ export const TranslatorView: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (sourceText.trim()) {
-        handleExecuteTranslate(sourceText, selectedTone);
+        handleExecuteTranslate(sourceText, selectedTone, sourceLang, targetLang);
       }
-    }, 700);
+    }, 600);
 
     return () => clearTimeout(timer);
-  }, [sourceText, sourceLang, targetLang, selectedTone]);
+  }, [sourceText, sourceLang, targetLang]);
+
+  // Khi người dùng bấm chuyển đổi 1 trong 4 Ngữ Cảnh:
+  const handleSelectTone = (tone: TranslationTone) => {
+    setSelectedTone(tone);
+    if (sourceText.trim()) {
+      handleExecuteTranslate(sourceText, tone, sourceLang, targetLang);
+    }
+  };
 
   // Đổi chiều dịch
   const handleSwapLanguages = () => {
@@ -126,11 +133,20 @@ export const TranslatorView: React.FC = () => {
     setSourceLang(nextSource);
     setTargetLang(nextTarget);
 
-    const currentTranslated = translationResult?.mainTranslation || '';
+    const currentTranslated = translationResult?.standard || '';
     if (currentTranslated) {
       setSourceText(currentTranslated);
+      handleExecuteTranslate(currentTranslated, selectedTone, nextSource, nextTarget);
     }
   };
+
+  // Xác định văn bản hiển thị theo tab văn phong
+  const currentOutputText = useMemo(() => {
+    if (!translationResult) return '';
+    if (activeOutputTab === 'formal') return translationResult.formal || translationResult.standard;
+    if (activeOutputTab === 'casual') return translationResult.casual || translationResult.standard;
+    return translationResult.standard;
+  }, [translationResult, activeOutputTab]);
 
   // Sao chép văn bản
   const handleCopy = (text: string) => {
@@ -152,16 +168,10 @@ export const TranslatorView: React.FC = () => {
 
   // Lưu bản dịch vào Flashcard SRS
   const handleSaveFlashcard = () => {
-    const activeText = activeOutputTab === 'formal' 
-      ? translationResult?.formalVersion 
-      : activeOutputTab === 'casual' 
-      ? translationResult?.casualVersion 
-      : translationResult?.mainTranslation;
+    if (!sourceText.trim() || !currentOutputText.trim()) return;
 
-    if (!sourceText.trim() || !activeText) return;
-
-    const englishWord = sourceLang === 'en' ? sourceText.trim() : activeText.trim();
-    const vietMeaning = sourceLang === 'en' ? activeText.trim() : sourceText.trim();
+    const englishWord = sourceLang === 'en' ? sourceText.trim() : currentOutputText.trim();
+    const vietMeaning = sourceLang === 'en' ? currentOutputText.trim() : sourceText.trim();
     const isLong = englishWord.split(/\s+/).length > 6;
 
     addCustomWord({
@@ -184,14 +194,6 @@ export const TranslatorView: React.FC = () => {
     setSaveStatus(`Đã lưu "${englishWord.slice(0, 30)}..." vào Flashcard SRS (+15 XP)!`);
     setTimeout(() => setSaveStatus(null), 3500);
   };
-
-  // Xác định văn bản hiển thị theo tab văn phong
-  const currentOutputText = useMemo(() => {
-    if (!translationResult) return '';
-    if (activeOutputTab === 'formal') return translationResult.formalVersion;
-    if (activeOutputTab === 'casual') return translationResult.casualVersion;
-    return translationResult.mainTranslation;
-  }, [translationResult, activeOutputTab]);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-16">
@@ -221,7 +223,7 @@ export const TranslatorView: React.FC = () => {
                 : 'bg-slate-800 text-slate-400 border-slate-700'
             }`}>
               <Sparkles className="w-3.5 h-3.5" />
-              <span>{geminiApiKey ? 'Gemini AI Đã Bật' : 'Dịch Chuẩn Cơ Bản'}</span>
+              <span>{geminiApiKey ? 'Gemini AI Đã Bật' : 'Dịch Theo Ngữ Cảnh Thông Minh'}</span>
             </span>
           </div>
         </div>
@@ -235,7 +237,7 @@ export const TranslatorView: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
               { id: 'business', label: '💼 Công Sở & Email', desc: 'Chuyên nghiệp, lịch sự' },
-              { id: 'tech', label: '💻 Công Nghệ / IT', desc: 'Giữ chuẩn thuật ngữ' },
+              { id: 'tech', label: '💻 Công Nghệ / IT', desc: 'Giữ chuẩn thuật ngữ IT' },
               { id: 'academic', label: '🎓 Học Thuật / IELTS', desc: 'Văn phong C1-C2' },
               { id: 'casual', label: '☕ Giao Tiếp Đời Thường', desc: 'Tự nhiên, ngắn gọn' },
             ].map((t) => {
@@ -243,7 +245,7 @@ export const TranslatorView: React.FC = () => {
               return (
                 <button
                   key={t.id}
-                  onClick={() => setSelectedTone(t.id as TranslationTone)}
+                  onClick={() => handleSelectTone(t.id as TranslationTone)}
                   className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between ${
                     isSelected
                       ? 'bg-teal-500/15 border-teal-400 text-teal-300 shadow-md shadow-teal-500/10 ring-1 ring-teal-400/40'
@@ -287,7 +289,10 @@ export const TranslatorView: React.FC = () => {
                 <span className="font-bold text-slate-400">VĂN BẢN GỐC ({sourceLang.toUpperCase()})</span>
                 {sourceText && (
                   <button
-                    onClick={() => setSourceText('')}
+                    onClick={() => {
+                      setSourceText('');
+                      setTranslationResult(null);
+                    }}
                     className="hover:text-white p-0.5"
                     title="Xóa nội dung"
                   >
@@ -326,10 +331,10 @@ export const TranslatorView: React.FC = () => {
               <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-900">
                 <div className="flex items-center gap-1.5 text-xs">
                   <button
-                    onClick={() => setActiveOutputTab('main')}
+                    onClick={() => setActiveOutputTab('standard')}
                     className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
-                      activeOutputTab === 'main' 
-                        ? 'bg-teal-500 text-slate-950' 
+                      activeOutputTab === 'standard' 
+                        ? 'bg-teal-500 text-slate-950 shadow-sm' 
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -340,7 +345,7 @@ export const TranslatorView: React.FC = () => {
                     onClick={() => setActiveOutputTab('formal')}
                     className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
                       activeOutputTab === 'formal' 
-                        ? 'bg-teal-500 text-slate-950' 
+                        ? 'bg-teal-500 text-slate-950 shadow-sm' 
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -351,7 +356,7 @@ export const TranslatorView: React.FC = () => {
                     onClick={() => setActiveOutputTab('casual')}
                     className={`px-2.5 py-1 rounded-lg font-bold transition-all ${
                       activeOutputTab === 'casual' 
-                        ? 'bg-teal-500 text-slate-950' 
+                        ? 'bg-teal-500 text-slate-950 shadow-sm' 
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
@@ -362,14 +367,18 @@ export const TranslatorView: React.FC = () => {
                 {loading && (
                   <span className="text-teal-400 text-xs font-bold animate-pulse flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                    <span>AI đang dịch...</span>
+                    <span>Đang dịch...</span>
                   </span>
                 )}
               </div>
 
               {/* Translated Text Content */}
               <div className="text-sm sm:text-base text-slate-100 font-medium whitespace-pre-wrap leading-relaxed min-h-[120px]">
-                {currentOutputText || <span className="text-slate-600 italic">Bản dịch sẽ hiển thị ở đây...</span>}
+                {currentOutputText ? (
+                  <span>{currentOutputText}</span>
+                ) : (
+                  <span className="text-slate-600 italic">Bản dịch sẽ hiển thị ở đây...</span>
+                )}
               </div>
             </div>
 
@@ -379,7 +388,8 @@ export const TranslatorView: React.FC = () => {
                 <button
                   onClick={() => handleSpeak(currentOutputText, targetLang)}
                   title="Nghe phát âm bản dịch"
-                  className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-teal-400 rounded-xl transition-colors"
+                  disabled={!currentOutputText}
+                  className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-teal-400 rounded-xl transition-colors disabled:opacity-30"
                 >
                   <Volume2 className="w-4 h-4" />
                 </button>
@@ -387,7 +397,8 @@ export const TranslatorView: React.FC = () => {
                 <button
                   onClick={() => handleCopy(currentOutputText)}
                   title="Sao chép kết quả"
-                  className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-teal-400 rounded-xl transition-colors flex items-center gap-1"
+                  disabled={!currentOutputText}
+                  className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-teal-400 rounded-xl transition-colors flex items-center gap-1 disabled:opacity-30"
                 >
                   {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                 </button>
@@ -418,23 +429,25 @@ export const TranslatorView: React.FC = () => {
           </div>
 
           {/* Context Note */}
-          <div className="p-3.5 bg-slate-850 border border-slate-800 rounded-2xl text-xs text-slate-300">
-            <span className="font-bold text-teal-400 block mb-0.5">💡 Giải thích lý do dịch:</span>
-            <p className="leading-relaxed italic">{translationResult.contextNote}</p>
-          </div>
+          {translationResult.contextNote && (
+            <div className="p-3.5 bg-slate-850 border border-slate-800 rounded-2xl text-xs text-slate-300">
+              <span className="font-bold text-teal-400 block mb-0.5">💡 Giải thích lý do dịch:</span>
+              <p className="leading-relaxed italic">{translationResult.contextNote}</p>
+            </div>
+          )}
 
           {/* Key Collocations */}
-          {translationResult.keyCollocations && translationResult.keyCollocations.length > 0 && (
+          {translationResult.collocations && translationResult.collocations.length > 0 && (
             <div className="space-y-2">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
                 Cụm từ đắt giá trong câu (Key Collocations):
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {translationResult.keyCollocations.map((item, idx) => (
+                {translationResult.collocations.map((item, idx) => (
                   <div key={idx} className="p-3 bg-slate-850/80 border border-slate-800 rounded-2xl space-y-1">
-                    <div className="flex items-center justify-between">
-                      <strong className="text-xs font-black text-emerald-400">{item.term}</strong>
-                      <span className="text-[11px] text-slate-300">{item.meaning}</span>
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="text-xs font-black text-emerald-400">{item.phrase || item.term}</strong>
+                      <span className="text-[11px] text-slate-300 text-right">{item.meaning}</span>
                     </div>
                     {item.note && (
                       <p className="text-[11px] text-slate-500 italic">→ {item.note}</p>
@@ -477,6 +490,7 @@ export const TranslatorView: React.FC = () => {
                   setTargetLang(item.targetLang);
                   setSelectedTone(item.tone);
                   setSourceText(item.sourceText);
+                  handleExecuteTranslate(item.sourceText, item.tone, item.sourceLang, item.targetLang);
                 }}
                 className="p-3.5 bg-slate-850 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 rounded-2xl text-left transition-all space-y-1.5 group"
               >
