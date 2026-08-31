@@ -11,7 +11,7 @@ export const EXTENDED_DICTIONARY_DATA: VocabWord[] = [
     meaning: "Kiến trúc vi dịch vụ phân tán",
     definitionEn: "An architectural style that structures an application as a collection of services.",
     example: "Microservices architecture improves deployment autonomy.",
-    exampleMeaning: "Kiến trúc microservices cải thiện tính tự chủ trong triển khai.",
+    exampleMeaning: "Kiến trúc vi dịch vụ cải thiện tính tự chủ trong triển khai và khả năng cô lập lỗi.",
     tag: "Tech",
     srsLevel: 0,
     interval: 0,

@@ -20,7 +20,7 @@ import {
   Eye,
   EyeOff,
   FileText,
-  Gauge
+  Bookmark
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
@@ -30,9 +30,21 @@ import { SRSGrade, VocabTag, VocabWord } from '../types';
 import { DailySettingsModal } from './DailySettingsModal';
 
 type QueueMode = 'DUE' | 'NEW';
-type FilterTag = 'ALL' | 'FAVORITE' | VocabTag;
+type FilterTag = 'ALL' | 'FAVORITE' | 'SAVED_SENTENCES' | VocabTag;
 
 const AUDIO_SPEED_PRESETS = [0.5, 0.75, 1.0, 1.25];
+
+// Helper phân biệt từ vựng đơn/cụm ngắn vs câu dịch/đoạn văn dài
+export const isSentenceItem = (w: VocabWord): boolean => {
+  if (!w.word) return false;
+  const wordCount = w.word.trim().split(/\s+/).length;
+  return (
+    wordCount > 4 || 
+    w.word.trim().length > 35 || 
+    (w.tag as string) === 'Sentence' || 
+    (w.partOfSpeech as string) === 'sentence'
+  );
+};
 
 export const FlashcardDeck: React.FC = () => {
   const { 
@@ -71,34 +83,60 @@ export const FlashcardDeck: React.FC = () => {
   const newWordsLearnedCount = todayProgress.newWordsLearned || 0;
   const isDailyNewGoalCompleted = newWordsLearnedCount >= dailyNewLimit;
 
-  // 1. Hàng đợi Ôn tập (Due Review Queue)
+  // 1. Hàng đợi Ôn tập (Due Review Queue) - Đã phân tách từ vựng vs câu dịch
   const dueReviewWords = useMemo(() => {
     return vocabularyList.filter((w) => {
       const isDue = isDueForReview(w.nextReviewDate);
       const isAlreadyLearned = w.srsLevel > 0 || !!w.lastReviewedDate;
-      const matchTag = 
-        selectedTag === 'ALL' 
-          ? true 
-          : selectedTag === 'FAVORITE' 
-          ? !!w.isFavorite 
-          : w.tag === selectedTag;
-      return isDue && isAlreadyLearned && matchTag;
+      if (!isDue || !isAlreadyLearned) return false;
+
+      const isSentence = isSentenceItem(w);
+
+      if (selectedTag === 'SAVED_SENTENCES') {
+        return isSentence;
+      }
+      if (selectedTag === 'FAVORITE') {
+        return !!w.isFavorite;
+      }
+      if (selectedTag === 'ALL') {
+        // Mặc định tab Tất Cả: Chỉ nạp các từ vựng / cụm từ cốt lõi
+        return !isSentence;
+      }
+      // Các chủ đề cụ thể (Tech, IELTS, TOEIC...): Chỉ lấy từ vựng thuộc tag đó
+      return !isSentence && w.tag === selectedTag;
     });
   }, [vocabularyList, selectedTag]);
 
-  // 2. Hàng đợi Từ mới (New Words Queue)
+  // 2. Hàng đợi Từ mới (New Words Queue) - Đã phân tách từ vựng vs câu dịch
   const allUnlearnedWords = useMemo(() => {
     return vocabularyList.filter((w) => {
       const isUnlearned = w.srsLevel === 0 && !w.lastReviewedDate;
-      const matchTag = 
-        selectedTag === 'ALL' 
-          ? true 
-          : selectedTag === 'FAVORITE' 
-          ? !!w.isFavorite 
-          : w.tag === selectedTag;
-      return isUnlearned && matchTag;
+      if (!isUnlearned) return false;
+
+      const isSentence = isSentenceItem(w);
+
+      if (selectedTag === 'SAVED_SENTENCES') {
+        return isSentence;
+      }
+      if (selectedTag === 'FAVORITE') {
+        return !!w.isFavorite;
+      }
+      if (selectedTag === 'ALL') {
+        // Mặc định tab Tất Cả: Chỉ nạp các từ vựng / cụm từ cốt lõi
+        return !isSentence;
+      }
+      return !isSentence && w.tag === selectedTag;
     });
   }, [vocabularyList, selectedTag]);
+
+  // Đếm số lượng câu dịch đã lưu & từ yêu thích
+  const savedSentencesCount = useMemo(() => {
+    return vocabularyList.filter((w) => isSentenceItem(w)).length;
+  }, [vocabularyList]);
+
+  const favoriteCount = useMemo(() => {
+    return vocabularyList.filter((w) => w.isFavorite).length;
+  }, [vocabularyList]);
 
   // Số lượng từ mới còn lại cần nạp hôm nay
   const remainingNewCount = Math.max(0, dailyNewLimit - newWordsLearnedCount);
@@ -108,7 +146,7 @@ export const FlashcardDeck: React.FC = () => {
 
   // Mặc định chọn hàng đợi Ôn tập nếu có từ đến hạn
   const [queueMode, setQueueMode] = useState<QueueMode>(() => {
-    const dueCount = vocabularyList.filter((w) => isDueForReview(w.nextReviewDate) && (w.srsLevel > 0 || !!w.lastReviewedDate)).length;
+    const dueCount = vocabularyList.filter((w) => isDueForReview(w.nextReviewDate) && (w.srsLevel > 0 || !!w.lastReviewedDate) && !isSentenceItem(w)).length;
     return dueCount > 0 ? 'DUE' : 'NEW';
   });
 
@@ -116,12 +154,10 @@ export const FlashcardDeck: React.FC = () => {
   const activeWords = queueMode === 'DUE' ? dueReviewWords : currentNewQueueWords;
   const currentWord: VocabWord | undefined = activeWords[currentIndex];
 
-  // Kiểm tra xem mục học hiện tại là từ đơn/cụm ngắn hay là một câu dài (Sentence)
-  const isLongSentence = useMemo(() => {
-    if (!currentWord?.word) return false;
-    const wordCount = currentWord.word.trim().split(/\s+/).length;
-    return wordCount > 4 || currentWord.word.trim().length > 35;
-  }, [currentWord?.word]);
+  // Kiểm tra xem mục học hiện tại là câu dài (Sentence)
+  const isCurrentSentence = useMemo(() => {
+    return currentWord ? isSentenceItem(currentWord) : false;
+  }, [currentWord]);
 
   // Bộ chọn tốc độ đọc phát âm linh hoạt (0.5x -> 0.75x -> 1.0x -> 1.25x)
   const handleCycleAudioSpeed = useCallback(() => {
@@ -279,8 +315,18 @@ export const FlashcardDeck: React.FC = () => {
     fireSuccessConfetti();
   };
 
-  const tagsList: FilterTag[] = ['ALL', 'FAVORITE', 'Tech', 'IELTS', 'TOEIC', 'Business', 'Academic', 'Daily', 'Idioms'];
-  const favoriteCount = vocabularyList.filter((w) => w.isFavorite).length;
+  const tagsList: FilterTag[] = [
+    'ALL', 
+    'FAVORITE', 
+    'SAVED_SENTENCES', 
+    'Tech', 
+    'IELTS', 
+    'TOEIC', 
+    'Business', 
+    'Academic', 
+    'Daily', 
+    'Idioms'
+  ];
 
   // Masking Cloze Helper
   const renderMaskedExample = (example: string, targetWord: string) => {
@@ -421,7 +467,7 @@ export const FlashcardDeck: React.FC = () => {
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-xl font-semibold">
               <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-slate-400">Cần ôn:</span>
-              <strong className="text-emerald-400">{dueReviewWords.length} từ</strong>
+              <strong className="text-emerald-400">{dueReviewWords.length} mục</strong>
             </div>
 
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-xl font-semibold">
@@ -500,13 +546,18 @@ export const FlashcardDeck: React.FC = () => {
         </div>
       </div>
 
-      {/* 3. TAG & FAVORITE FILTER BAR */}
+      {/* 3. TAG & FAVORITE FILTER BAR (ĐÃ TÁCH BIỆT TAB ĐOẠN DỊCH / ĐÃ LƯU) */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap pl-1">
-          Chủ đề:
+          Lọc theo:
         </span>
         {tagsList.map((tag) => {
           const isSelected = selectedTag === tag;
+          let label: string = tag;
+          if (tag === 'ALL') label = '📚 Từ Vựng Cốt Lõi';
+          if (tag === 'FAVORITE') label = `⭐ Yêu Thích (${favoriteCount})`;
+          if (tag === 'SAVED_SENTENCES') label = `📝 Đoạn Dịch / Đã Lưu (${savedSentencesCount})`;
+
           return (
             <button
               key={tag}
@@ -515,14 +566,19 @@ export const FlashcardDeck: React.FC = () => {
                 setCurrentIndex(0);
                 setIsFlipped(false);
               }}
-              className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                 isSelected
-                  ? 'bg-slate-700 text-emerald-400 border border-emerald-500/40 font-bold shadow-sm'
+                  ? tag === 'SAVED_SENTENCES'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-bold shadow-sm'
+                    : tag === 'FAVORITE'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold shadow-sm'
+                    : 'bg-slate-700 text-emerald-400 border border-emerald-500/40 font-bold shadow-sm'
                   : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
               }`}
             >
               {tag === 'FAVORITE' && <Star className={`w-3.5 h-3.5 ${isSelected ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />}
-              <span>{tag === 'ALL' ? 'Tất cả' : tag === 'FAVORITE' ? `⭐ Yêu thích (${favoriteCount})` : tag}</span>
+              {tag === 'SAVED_SENTENCES' && <FileText className="w-3.5 h-3.5 text-cyan-400" />}
+              <span>{label}</span>
             </button>
           );
         })}
@@ -540,7 +596,7 @@ export const FlashcardDeck: React.FC = () => {
           <div className="space-y-2">
             <h3 className="text-2xl sm:text-3xl font-black text-white">Tuyệt vời! Đã hoàn thành ôn tập hôm nay 🎉</h3>
             <p className="text-slate-400 text-sm max-w-md mx-auto">
-              Không còn từ vựng nào đến hạn ôn tập trong ngày hôm nay theo thuật toán Spaced Repetition SM-2.
+              Không còn mục nào đến hạn ôn tập trong danh mục này theo thuật toán Spaced Repetition SM-2.
             </p>
           </div>
 
@@ -615,7 +671,9 @@ export const FlashcardDeck: React.FC = () => {
                   {queueMode === 'DUE' ? `SRS Level: ${currentWord?.srsLevel || 0}` : '🌟 Từ Mới'}
                 </span>
                 <span>•</span>
-                <span className="text-slate-500">{currentWord?.tag}</span>
+                <span className="text-slate-500">
+                  {isCurrentSentence ? 'Đoạn Dịch' : currentWord?.tag}
+                </span>
               </div>
             </div>
 
@@ -648,7 +706,7 @@ export const FlashcardDeck: React.FC = () => {
                 {/* Top Bar of Front */}
                 <div className="flex justify-between items-center">
                   <div className="flex items-center gap-2">
-                    {isLongSentence ? (
+                    {isCurrentSentence ? (
                       <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20 flex items-center gap-1.5">
                         <FileText className="w-3.5 h-3.5" />
                         <span>Đoạn dịch / Sentence</span>
@@ -713,7 +771,7 @@ export const FlashcardDeck: React.FC = () => {
 
                 {/* Center Core Word or Sentence */}
                 <div className="text-center my-auto py-6 space-y-4">
-                  {isLongSentence ? (
+                  {isCurrentSentence ? (
                     /* Dành cho câu dài / đoạn dịch */
                     <div className="space-y-3 max-w-2xl mx-auto">
                       <h2 className="text-lg sm:text-2xl font-bold text-white leading-relaxed tracking-normal">
@@ -760,7 +818,7 @@ export const FlashcardDeck: React.FC = () => {
                   {/* Top Bar of Back */}
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800">
                     <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                      {isLongSentence ? 'Bản Dịch Nghĩa Tiếng Việt' : 'Định nghĩa tiếng Việt'}
+                      {isCurrentSentence ? 'Bản Dịch Nghĩa Tiếng Việt' : 'Định nghĩa tiếng Việt'}
                     </span>
                     
                     <div className="flex items-center gap-2">
@@ -809,7 +867,7 @@ export const FlashcardDeck: React.FC = () => {
 
                   {/* Vietnamese Meaning */}
                   <div>
-                    <h3 className={`${isLongSentence ? 'text-lg sm:text-xl font-bold text-emerald-300 leading-relaxed' : 'text-2xl sm:text-3xl font-extrabold text-white leading-snug'}`}>
+                    <h3 className={`${isCurrentSentence ? 'text-lg sm:text-xl font-bold text-emerald-300 leading-relaxed' : 'text-2xl sm:text-3xl font-extrabold text-white leading-snug'}`}>
                       {currentWord?.meaning}
                     </h3>
                   </div>

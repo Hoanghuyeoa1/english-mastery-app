@@ -3,7 +3,7 @@ const path = require('path');
 
 // 1. Danh sách nguồn từ vựng chất lượng cao được tuyển chọn
 const IT_TECH_VOCAB = [
-  ['Microservices', '/ˈmaɪ.krəʊˌsɜː.vɪs.ɪz/', 'noun', 'Kiến trúc vi dịch vụ phân tán', 'Microservices architecture improves deployment autonomy and fault isolation.', 'Kiến trúc microservices cải thiện tính tự chủ triển khai và cô lập lỗi.', 'IT / Tech', 'C1', 'Tech'],
+  ['Microservices', '/ˈmaɪ.krəʊˌsɜː.vɪs.ɪz/', 'noun', 'Kiến trúc vi dịch vụ phân tán', 'Microservices architecture improves deployment autonomy and fault isolation.', 'Kiến trúc vi dịch vụ cải thiện tính tự chủ trong triển khai và khả năng cô lập lỗi.', 'IT / Tech', 'C1', 'Tech'],
   ['Scalability', '/ˌskeɪ.ləˈbɪl.ə.ti/', 'noun', 'Khả năng mở rộng quy mô hệ thống', 'Cloud infrastructure provides elastic scalability for web applications.', 'Hạ tầng đám mây cung cấp khả năng mở rộng linh hoạt cho ứng dụng web.', 'IT / Tech', 'C1', 'Tech'],
   ['Concurrency', '/kənˈkʌr.ən.si/', 'noun', 'Tính đồng thời trong xử lý đa luồng', 'Go handles high concurrency with lightweight goroutines and channels.', 'Ngôn ngữ Go xử lý tính đồng thời cao với các goroutine và channel gọn nhẹ.', 'IT / Tech', 'C1', 'Tech'],
   ['Asynchronous', '/eɪˈsɪŋ.krə.nəs/', 'adjective', 'Bất đồng bộ, không chặn luồng chính', 'Asynchronous operations prevent blocking the main UI thread.', 'Các thao tác bất đồng bộ ngăn ngừa việc chặn luồng giao diện chính.', 'IT / Tech', 'B2', 'Tech'],
