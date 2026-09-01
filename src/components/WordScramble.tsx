@@ -5,6 +5,7 @@ import confetti from 'canvas-confetti';
 import { speakWord } from '../services/speechService';
 import { cleanMeaningForScramble } from '../services/textSanitizer';
 import { VocabWord } from '../types';
+import { useAppStore } from '../store/useAppStore';
 
 export interface LetterItem {
   id: string;
@@ -29,6 +30,7 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
   audioVoice,
   audioSpeed,
 }) => {
+  const { recordMistake, recordMistakeCorrect } = useAppStore();
   const [currentVocab, setCurrentVocab] = useState<VocabWord | null>(null);
   const [targetWord, setTargetWord] = useState<string>('');
   const [availableLetters, setAvailableLetters] = useState<LetterItem[]>([]);
@@ -124,6 +126,9 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
       if (spelledWord === targetWord) {
         // ĐÚNG CHÍNH TẢ!
         setIsSuccess(true);
+        if (currentVocab) {
+          recordMistakeCorrect(currentVocab.id || currentVocab.word);
+        }
         speakWord(targetWord, audioVoice, audioSpeed);
         onGainXP(20);
         onIncrementStreak?.();
@@ -136,12 +141,15 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
       } else {
         // SAI CHÍNH TẢ!
         setIsError(true);
+        if (currentVocab) {
+          recordMistake(currentVocab, 'scramble');
+        }
         setTimeout(() => {
           setIsError(false);
         }, 650);
       }
     }
-  }, [userSlots, targetWord, isSuccess, audioVoice, audioSpeed, onGainXP, onIncrementStreak, loadNewWord]);
+  }, [userSlots, targetWord, isSuccess, currentVocab, audioVoice, audioSpeed, onGainXP, onIncrementStreak, recordMistake, recordMistakeCorrect, loadNewWord]);
 
   // 3. GỠ CHỮ CÁI KHỎI Ô TRỐNG (REMOVE LETTER FROM SLOT)
   const handleRemoveSlot = useCallback((slotIndex: number) => {

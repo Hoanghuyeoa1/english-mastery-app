@@ -11,13 +11,15 @@ import {
   Zap,
   ArrowRight,
   Layers,
-  Star
+  Star,
+  Mic
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
 import { speakWord } from '../services/speechService';
 import { translateText } from '../services/translationService';
 import { VocabWord } from '../types';
+import { VoicePronunciationModal } from './VoicePronunciationModal';
 import { 
   searchFullDictionary, 
   getFullDictionaryCount, 
@@ -53,6 +55,7 @@ export const DictionaryView: React.FC<DictionaryViewProps> = ({ onOpenAddWord })
   const [searchTerm, setSearchTerm] = useState('resilience');
   const [loading, setLoading] = useState(false);
   const [entry, setEntry] = useState<DictionaryEntryData | null>(null);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([
     'resilience', 'meticulous', 'innovation', 'proactive', 'empathy', 'sustainable', 'microservices'
   ]);
@@ -395,6 +398,16 @@ export const DictionaryView: React.FC<DictionaryViewProps> = ({ onOpenAddWord })
                 <span>Phát âm</span>
               </button>
 
+              {/* Voice Mic Pronunciation Checker */}
+              <button
+                onClick={() => setIsVoiceModalOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-teal-500/15 hover:bg-teal-500/25 text-teal-300 border border-teal-500/40 rounded-xl text-xs font-bold transition-all"
+                title="Chấm điểm phát âm qua Micro"
+              >
+                <Mic className="w-4 h-4 text-teal-400" />
+                <span>Chấm phát âm Mic</span>
+              </button>
+
               {/* 1-Click Save to SRS Deck Button */}
               {isWordInMyDeck ? (
                 <div className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 rounded-xl text-xs font-bold">
@@ -486,6 +499,18 @@ export const DictionaryView: React.FC<DictionaryViewProps> = ({ onOpenAddWord })
 
         </div>
       ) : null}
+
+      {/* Voice Pronunciation Modal */}
+      {entry && (
+        <VoicePronunciationModal
+          isOpen={isVoiceModalOpen}
+          onClose={() => setIsVoiceModalOpen(false)}
+          targetText={entry.word}
+          ipa={entry.localData?.ipa}
+          meaning={entry.vietnameseMeaning}
+          example={entry.localData?.example}
+        />
+      )}
 
     </div>
   );

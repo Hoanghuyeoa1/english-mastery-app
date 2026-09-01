@@ -104,11 +104,22 @@ export function createSpeechRecognizer(
 }
 
 /**
+ * Chuẩn hóa chuỗi văn bản để so khớp phát âm
+ */
+export function normalizePronunciationText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?"'’]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Tính điểm độ tương đồng Levenshtein Distance giữa từ dự kiến và giọng đọc thực tế
  */
 export function calculateAccuracy(expected: string, actual: string): number {
-  const cleanExp = expected.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-  const cleanAct = actual.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+  const cleanExp = normalizePronunciationText(expected);
+  const cleanAct = normalizePronunciationText(actual);
 
   if (!cleanExp || !cleanAct) return 0;
   if (cleanExp === cleanAct) return 100;
@@ -134,4 +145,111 @@ export function calculateAccuracy(expected: string, actual: string): number {
   const maxLen = Math.max(m, n);
   const similarity = Math.max(0, (1 - distance / maxLen) * 100);
   return Math.round(similarity);
+}
+
+export interface WordMatchDetail {
+  word: string;
+  status: 'perfect' | 'near' | 'missed';
+  score: number;
+}
+
+export interface PronunciationAssessmentResult {
+  score: number;
+  tier: 'excellent' | 'good' | 'try_again';
+  title: string;
+  feedback: string;
+  targetText: string;
+  spokenText: string;
+  words: WordMatchDetail[];
+  xpEarned: number;
+}
+
+/**
+ * Phân tích và chấm điểm chi tiết phát âm theo từng từ và toàn bộ câu
+ */
+export function assessPronunciation(targetText: string, spokenText: string): PronunciationAssessmentResult {
+  const normTarget = normalizePronunciationText(targetText);
+  const normSpoken = normalizePronunciationText(spokenText);
+
+  if (!normSpoken) {
+    return {
+      score: 0,
+      tier: 'try_again',
+      title: 'Hãy thử lại / Try Again',
+      feedback: 'Chưa nhận diện được giọng nói rõ ràng. Hãy lại gần micro và phát âm lại nhé.',
+      targetText,
+      spokenText: '',
+      words: normTarget.split(' ').map((w) => ({ word: w, status: 'missed', score: 0 })),
+      xpEarned: 0,
+    };
+  }
+
+  const overallAccuracy = calculateAccuracy(normTarget, normSpoken);
+
+  // Phân tích theo từng từ
+  const targetWords = normTarget.split(' ').filter(Boolean);
+  const spokenWords = normSpoken.split(' ').filter(Boolean);
+
+  const wordDetails: WordMatchDetail[] = targetWords.map((tWord) => {
+    // Tìm từ được nói có độ tương đồng cao nhất
+    let bestWordScore = 0;
+    for (const sWord of spokenWords) {
+      const sim = calculateAccuracy(tWord, sWord);
+      if (sim > bestWordScore) {
+        bestWordScore = sim;
+      }
+    }
+
+    let status: 'perfect' | 'near' | 'missed' = 'missed';
+    if (bestWordScore >= 85) {
+      status = 'perfect';
+    } else if (bestWordScore >= 55) {
+      status = 'near';
+    }
+
+    return {
+      word: tWord,
+      status,
+      score: bestWordScore,
+    };
+  });
+
+  // Đánh giá tổng hợp điểm và tier
+  let finalScore = overallAccuracy;
+  // Nếu là câu nhiều từ, tính kết hợp giữa word average và overall Levenshtein
+  if (targetWords.length > 1) {
+    const avgWordScore = wordDetails.reduce((acc, curr) => acc + curr.score, 0) / targetWords.length;
+    finalScore = Math.round(overallAccuracy * 0.4 + avgWordScore * 0.6);
+  }
+
+  let tier: 'excellent' | 'good' | 'try_again' = 'try_again';
+  let title = 'Hãy thử lại / Try Again';
+  let feedback = 'Phát âm chưa chuẩn xác. Hãy bấm nút loa để nghe lại mẫu bản xứ và thử lại nhé.';
+  let xpEarned = 0;
+
+  if (finalScore >= 85) {
+    tier = 'excellent';
+    title = 'Tuyệt vời! / Excellent 🎉';
+    feedback = 'Phát âm cực kỳ chuẩn xác và rõ ràng. Tiếp tục phát huy nhé!';
+    xpEarned = 25;
+  } else if (finalScore >= 60) {
+    tier = 'good';
+    title = 'Tạm được / Good Try 👍';
+    const missedWords = wordDetails.filter((w) => w.status !== 'perfect').map((w) => w.word);
+    feedback = missedWords.length > 0 
+      ? `Đọc khá tốt! Hãy chú ý phát âm rõ hơn các từ: "${missedWords.join(', ')}".`
+      : 'Đọc khá ổn, cố gắng phát âm tròn vành rõ chữ hơn để đạt điểm tuyệt đối!';
+    xpEarned = 15;
+  }
+
+  return {
+    score: finalScore,
+    tier,
+    title,
+    feedback,
+    targetText,
+    spokenText,
+    words: wordDetails,
+    xpEarned,
+  };
 }

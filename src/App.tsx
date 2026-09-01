@@ -6,9 +6,11 @@ import { QuizArena } from './components/QuizArena';
 import { PronunciationArena } from './components/PronunciationArena';
 import { ToeicAssessmentView } from './components/ToeicAssessmentView';
 import { AITutorView } from './components/AITutorView';
+import { FourSkillsView } from './components/FourSkillsView';
 import { WordManager } from './components/WordManager';
 import { DictionaryView } from './components/DictionaryView';
 import { TranslatorView } from './components/TranslatorView';
+import { MistakeBankView } from './components/MistakeBankView';
 import { AddWordModal } from './components/AddWordModal';
 import { BulkImportModal } from './components/BulkImportModal';
 import { BackupModal } from './components/BackupModal';
@@ -68,11 +70,20 @@ export function App() {
 
         {activeTab === 'flashcards' && <FlashcardDeck onNavigate={(tab) => setActiveTab(tab)} />}
 
+        {activeTab === 'mistakes' && <MistakeBankView onNavigate={(tab) => setActiveTab(tab)} />}
+
         {activeTab === 'toeic' && <ToeicAssessmentView />}
 
         {(activeTab === 'quiz' || activeTab === 'arcade') && <QuizArena />}
 
         {activeTab === 'pronunciation' && <PronunciationArena />}
+
+        {activeTab === 'four_skills' && (
+          <FourSkillsView 
+            onNavigate={(tab) => setActiveTab(tab)} 
+            onOpenAddWord={(word) => handleOpenAddWord(word || '')} 
+          />
+        )}
 
         {activeTab === 'tutor' && <AITutorView />}
 

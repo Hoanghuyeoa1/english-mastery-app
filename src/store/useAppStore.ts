@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { UserProfile, VocabWord, DailyProgress, SRSGrade, Achievement, VocabTag } from '../types';
+import { UserProfile, VocabWord, DailyProgress, SRSGrade, Achievement, VocabTag, MistakeRecord } from '../types';
 import { calculateSM2 } from '../services/srsAlgorithm';
 import { VOCAB_10000_BANK } from '../data/defaultVocab';
+import { calculateLevelFromXp } from '../utils/userRank';
 
 export interface SRSProgress {
   srsLevel: number;
@@ -130,6 +131,7 @@ interface AppStoreState {
   userCustomWords: VocabWord[];
   srsProgressMap: Record<string, SRSProgress>;
   vocabularyList: VocabWord[]; // In-memory unified bank
+  mistakeBank: Record<string, MistakeRecord>; // Sổ tay bẫy lỗi sai
   dailyHistory: Record<string, DailyProgress>;
   achievements: Achievement[];
   audioVoice: 'en-US' | 'en-GB';
@@ -137,8 +139,10 @@ interface AppStoreState {
   autoPlayAudio: boolean;
   isMaskExample: boolean;
   geminiApiKey: string;
+  activeFourSkill: 'listening' | 'reading' | 'speaking' | 'writing';
 
   // Actions
+  setActiveFourSkill: (skill: 'listening' | 'reading' | 'speaking' | 'writing') => void;
   setProfileName: (name: string, targetGoal?: UserProfile['targetGoal']) => void;
   setAudioVoice: (voice: 'en-US' | 'en-GB') => void;
   setAudioSpeed: (speed: number) => void;
@@ -154,6 +158,14 @@ interface AppStoreState {
   setDailyNewWordsLimit: (limit: number) => void;
   addExtraNewWords: (count: number) => void;
   processReview: (wordId: string, grade: SRSGrade) => void;
+  recordMistake: (
+    word: Partial<VocabWord> & { word: string; meaning?: string },
+    source?: MistakeRecord['source']
+  ) => void;
+  recordMistakeCorrect: (wordIdOrText: string) => void;
+  removeMistake: (wordIdOrText: string) => void;
+  clearResolvedMistakes: () => void;
+  clearAllMistakes: () => void;
   recordQuizCompleted: (xpEarned: number, isPerfect: boolean) => void;
   recordPronunciationMastered: (xpEarned: number) => void;
   addCustomWord: (word: Omit<VocabWord, 'id' | 'srsLevel' | 'interval' | 'easeFactor' | 'nextReviewDate'>) => void;
@@ -165,6 +177,7 @@ interface AppStoreState {
   checkAchievements: () => void;
   exportBackupData: () => string;
   importBackupData: (jsonData: string) => { success: boolean; message: string };
+  resetVocabularyProgress: () => void;
   resetToDefault: () => void;
 }
 
@@ -204,6 +217,7 @@ const safeStorage = {
                 profile: s.profile || DEFAULT_PROFILE,
                 userCustomWords: s.userCustomWords || [],
                 srsProgressMap: migratedSrsMap,
+                mistakeBank: s.mistakeBank || {},
                 dailyHistory: s.dailyHistory || {},
                 achievements: s.achievements || INITIAL_ACHIEVEMENTS,
                 audioVoice: s.audioVoice || 'en-US',
@@ -255,6 +269,7 @@ export const useAppStore = create<AppStoreState>()(
       userCustomWords: [],
       srsProgressMap: {},
       vocabularyList: composeVocabularyList({}, []),
+      mistakeBank: {},
       dailyHistory: {},
       achievements: INITIAL_ACHIEVEMENTS,
       audioVoice: 'en-US',
@@ -262,6 +277,9 @@ export const useAppStore = create<AppStoreState>()(
       autoPlayAudio: true,
       isMaskExample: false,
       geminiApiKey: '',
+      activeFourSkill: 'listening',
+
+      setActiveFourSkill: (skill) => set({ activeFourSkill: skill }),
 
       setProfileName: (name, targetGoal = 'daily') => {
         const cleanName = name.trim();
@@ -315,17 +333,51 @@ export const useAppStore = create<AppStoreState>()(
 
       checkDailyReset: () => {
         const today = new Date().toISOString().split('T')[0];
-        const { lastStudyDate } = get().profile;
+        const { lastStudyDate, lastActiveDate, streak } = get().profile;
 
-        if (!lastStudyDate || lastStudyDate !== today) {
-          set((state) => ({
-            profile: {
-              ...state.profile,
-              lastStudyDate: today,
-              extraNewWordsBonus: 0,
-              targetDailyNewWords: state.profile.targetDailyNewWords || 15,
-            },
-          }));
+        if (!lastActiveDate || lastActiveDate !== today) {
+          let updatedStreak = streak;
+          if (lastActiveDate) {
+            const prev = new Date(lastActiveDate);
+            const curr = new Date(today);
+            const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 3600 * 24));
+            if (diffDays > 1) {
+              // Missed >= 2 days, reset streak to 1
+              updatedStreak = 1;
+            }
+          }
+
+          set((state) => {
+            const todayHistory = state.dailyHistory[today] || {
+              date: today,
+              wordsReviewed: 0,
+              newWordsLearned: 0,
+              quizzesCompleted: 0,
+              pronunciationsMastered: 0,
+              xpGained: 0,
+            };
+
+            return {
+              profile: {
+                ...state.profile,
+                lastActiveDate: today,
+                lastStudyDate: today,
+                streak: updatedStreak,
+                extraNewWordsBonus: 0,
+                targetDailyNewWords: state.profile.targetDailyNewWords || 15,
+              },
+              dailyHistory: {
+                ...state.dailyHistory,
+                [today]: todayHistory,
+              },
+            };
+          });
+
+          try {
+            localStorage.setItem('english_mastery_last_active_date', today);
+          } catch (e) {
+            // ignore
+          }
         }
       },
 
@@ -356,23 +408,22 @@ export const useAppStore = create<AppStoreState>()(
 
         if (!lastActiveDate) {
           set((state) => ({
-            profile: { ...state.profile, streak: 1, lastActiveDate: today },
+            profile: { ...state.profile, streak: 1, lastActiveDate: today, lastStudyDate: today },
           }));
           return;
         }
 
         const prev = new Date(lastActiveDate);
         const curr = new Date(today);
-        const diffTime = curr.getTime() - prev.getTime();
-        const diffDays = Math.round(diffTime / (1000 * 3600 * 24));
+        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 3600 * 24));
 
         if (diffDays === 1) {
           set((state) => ({
-            profile: { ...state.profile, streak: streak + 1, lastActiveDate: today },
+            profile: { ...state.profile, streak: streak + 1, lastActiveDate: today, lastStudyDate: today },
           }));
         } else if (diffDays > 1) {
           set((state) => ({
-            profile: { ...state.profile, streak: 1, lastActiveDate: today },
+            profile: { ...state.profile, streak: 1, lastActiveDate: today, lastStudyDate: today },
           }));
         }
       },
@@ -386,7 +437,7 @@ export const useAppStore = create<AppStoreState>()(
           const currentXP = state.profile.xp;
           const newXP = currentXP + amount;
           const oldLevel = state.profile.level;
-          const newLevel = Math.floor(newXP / 100) + 1;
+          const newLevel = calculateLevelFromXp(newXP);
 
           if (newLevel > oldLevel) {
             leveledUp = true;
@@ -471,6 +522,14 @@ export const useAppStore = create<AppStoreState>()(
           xpGained: 0,
         };
 
+        // TỰ ĐỘNG GHI NHẬN VÀO SỔ BẪY LỖI KHI BẤM AGAIN (0) HOẶC SỬA LỖI (2, 3)
+        if (grade === 0) {
+          get().recordMistake(word, 'srs_again');
+        } else if (grade >= 2) {
+          get().recordMistakeCorrect(word.id);
+          get().recordMistakeCorrect(word.word);
+        }
+
         set({
           srsProgressMap: {
             ...state.srsProgressMap,
@@ -489,6 +548,100 @@ export const useAppStore = create<AppStoreState>()(
 
         const xpReward = grade === 3 ? 15 : grade === 2 ? 10 : grade === 1 ? 5 : 2;
         get().gainXP(xpReward);
+      },
+
+      recordMistake: (wordItem, source = 'custom') => {
+        const cleanWord = wordItem.word.trim();
+        if (!cleanWord) return;
+        const key = (wordItem.id || cleanWord).toLowerCase();
+
+        set((state) => {
+          const currentRecord = state.mistakeBank[key] || state.mistakeBank[cleanWord.toLowerCase()];
+          const nowIso = new Date().toISOString();
+
+          const updatedRecord: MistakeRecord = {
+            id: wordItem.id || `mistake_${cleanWord.toLowerCase()}`,
+            word: cleanWord,
+            ipa: wordItem.ipa || currentRecord?.ipa,
+            meaning: wordItem.meaning || currentRecord?.meaning || '',
+            example: wordItem.example || currentRecord?.example,
+            tag: (wordItem.tag as any) || currentRecord?.tag || 'Daily',
+            mistakeCount: (currentRecord?.mistakeCount || 0) + 1,
+            consecutiveCorrect: 0, // Reset chuỗi trả lời đúng về 0
+            resolved: false,
+            lastMistakeAt: nowIso,
+            source: source || currentRecord?.source || 'custom',
+          };
+
+          return {
+            mistakeBank: {
+              ...state.mistakeBank,
+              [key]: updatedRecord,
+            },
+          };
+        });
+      },
+
+      recordMistakeCorrect: (wordIdOrText: string) => {
+        if (!wordIdOrText) return;
+        const key = wordIdOrText.trim().toLowerCase();
+
+        set((state) => {
+          // Tìm theo key hoặc word
+          const matchedEntry = Object.entries(state.mistakeBank).find(
+            ([k, item]) => k === key || item.id === wordIdOrText || item.word.toLowerCase() === key
+          );
+
+          if (!matchedEntry) return state;
+          const [foundKey, currentRecord] = matchedEntry;
+
+          const nextConsecutive = (currentRecord.consecutiveCorrect || 0) + 1;
+          const isResolved = nextConsecutive >= 2;
+
+          const updatedRecord: MistakeRecord = {
+            ...currentRecord,
+            consecutiveCorrect: nextConsecutive,
+            resolved: isResolved,
+          };
+
+          return {
+            mistakeBank: {
+              ...state.mistakeBank,
+              [foundKey]: updatedRecord,
+            },
+          };
+        });
+      },
+
+      removeMistake: (wordIdOrText: string) => {
+        if (!wordIdOrText) return;
+        const key = wordIdOrText.trim().toLowerCase();
+
+        set((state) => {
+          const nextBank = { ...state.mistakeBank };
+          Object.keys(nextBank).forEach((k) => {
+            if (k === key || nextBank[k].id === wordIdOrText || nextBank[k].word.toLowerCase() === key) {
+              delete nextBank[k];
+            }
+          });
+          return { mistakeBank: nextBank };
+        });
+      },
+
+      clearResolvedMistakes: () => {
+        set((state) => {
+          const nextBank: Record<string, MistakeRecord> = {};
+          Object.entries(state.mistakeBank).forEach(([k, v]) => {
+            if (!v.resolved) {
+              nextBank[k] = v;
+            }
+          });
+          return { mistakeBank: nextBank };
+        });
+      },
+
+      clearAllMistakes: () => {
+        set({ mistakeBank: {} });
       },
 
       recordQuizCompleted: (xpEarned: number, _isPerfect: boolean) => {
@@ -636,10 +789,11 @@ export const useAppStore = create<AppStoreState>()(
           app: 'EnglishMasteryHub',
           owner: state.profile.name || 'Học viên',
           exportedAt: new Date().toISOString(),
-          version: '2.0.0',
+          version: '2.1.0',
           profile: state.profile,
           userCustomWords: state.userCustomWords,
           srsProgressMap: state.srsProgressMap,
+          mistakeBank: state.mistakeBank,
           dailyHistory: state.dailyHistory,
           achievements: state.achievements,
         };
@@ -655,6 +809,7 @@ export const useAppStore = create<AppStoreState>()(
 
           const customWords: VocabWord[] = parsed.userCustomWords || parsed.vocabularyList || [];
           const srsMap: Record<string, SRSProgress> = parsed.srsProgressMap || {};
+          const mistakeBank: Record<string, MistakeRecord> = parsed.mistakeBank || {};
 
           set({
             profile: {
@@ -664,6 +819,7 @@ export const useAppStore = create<AppStoreState>()(
             },
             userCustomWords: customWords,
             srsProgressMap: srsMap,
+            mistakeBank: mistakeBank,
             vocabularyList: composeVocabularyList(srsMap, customWords),
             dailyHistory: parsed.dailyHistory || {},
             achievements: parsed.achievements || INITIAL_ACHIEVEMENTS,
@@ -675,6 +831,13 @@ export const useAppStore = create<AppStoreState>()(
         }
       },
 
+      resetVocabularyProgress: () => {
+        set((state) => ({
+          srsProgressMap: {},
+          vocabularyList: composeVocabularyList({}, state.userCustomWords),
+        }));
+      },
+
       resetToDefault: () => {
         set({
           profile: {
@@ -684,6 +847,7 @@ export const useAppStore = create<AppStoreState>()(
           },
           userCustomWords: [],
           srsProgressMap: {},
+          mistakeBank: {},
           vocabularyList: composeVocabularyList({}, []),
           dailyHistory: {},
           achievements: INITIAL_ACHIEVEMENTS,
@@ -698,6 +862,7 @@ export const useAppStore = create<AppStoreState>()(
         profile: state.profile,
         userCustomWords: state.userCustomWords,
         srsProgressMap: state.srsProgressMap,
+        mistakeBank: state.mistakeBank,
         dailyHistory: state.dailyHistory,
         achievements: state.achievements,
         audioVoice: state.audioVoice,

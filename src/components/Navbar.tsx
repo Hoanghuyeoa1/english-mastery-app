@@ -18,10 +18,15 @@ import {
   Search,
   Zap,
   Mic,
-  Languages
+  Languages,
+  ShieldAlert,
+  Headphones,
+  PenTool
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { ActiveTab } from '../types';
+import { UserAvatar, UserRankBadge } from './UserProfileBadge';
+import { getUserRankInfo, getXpLevelProgress } from '../utils/userRank';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -36,12 +41,14 @@ interface NavbarProps {
 interface DropdownGroup {
   id: string;
   label: string;
+  badge?: string;
   icon: React.ReactNode;
   activeTabs: ActiveTab[];
   items: {
     id: ActiveTab;
     label: string;
     desc: string;
+    badge?: string;
     icon: React.ReactNode;
   }[];
 }
@@ -55,10 +62,14 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAddWord,
   onOpenDailySettings,
 }) => {
-  const { profile, refillHearts, audioVoice, setAudioVoice } = useAppStore();
+  const { profile, refillHearts, audioVoice, setAudioVoice, mistakeBank, setActiveFourSkill } = useAppStore();
 
-  const xpCurrentLevel = profile.xp % 100;
-  const xpToNextLevel = 100 - xpCurrentLevel;
+  const unresolvedMistakeCount = Object.values(mistakeBank || {}).filter((m) => !m.resolved).length;
+  const xpProgress = getXpLevelProgress(profile.xp);
+  const currentLevel = xpProgress.level;
+  const userRank = getUserRankInfo(currentLevel);
+  const xpCurrentLevel = xpProgress.percentage;
+  const xpToNextLevel = xpProgress.nextLevelXpRequired - xpProgress.currentLevelXp;
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const dropdownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,14 +91,22 @@ export const Navbar: React.FC<NavbarProps> = ({
     {
       id: 'vocab_group',
       label: 'Học Từ Vựng',
+      badge: unresolvedMistakeCount > 0 ? `${unresolvedMistakeCount}` : undefined,
       icon: <Layers className="w-4 h-4" />,
-      activeTabs: ['flashcards', 'vocabulary', 'dictionary'],
+      activeTabs: ['flashcards', 'mistakes', 'vocabulary', 'dictionary'],
       items: [
         {
           id: 'flashcards',
           label: 'Thẻ SRS SM-2',
           desc: 'Ôn tập lặp lại ngắt quãng thông minh',
           icon: <Brain className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'mistakes',
+          label: 'Sổ Bẫy Lỗi Sai',
+          desc: 'Tự động bắt từ hay quên & ôn cứu hộ',
+          badge: unresolvedMistakeCount > 0 ? `🔴 ${unresolvedMistakeCount} từ` : undefined,
+          icon: <ShieldAlert className="w-4 h-4 text-rose-400" />,
         },
         {
           id: 'vocabulary',
@@ -152,46 +171,47 @@ export const Navbar: React.FC<NavbarProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-slate-950/85 backdrop-blur-xl border-b border-slate-800/80">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-50 bg-slate-950/85 backdrop-blur-xl border-b border-slate-800/80 overflow-visible">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 overflow-visible">
         
-        {/* Top Header: Identity & Gamification */}
         <div className="flex items-center justify-between h-16 sm:h-20">
           
-          {/* Logo & User Identity */}
           <div 
             onClick={onOpenProfile}
-            title="Nhấp để chỉnh sửa hồ sơ & sao lưu"
-            className="flex items-center gap-3 cursor-pointer group"
+            title={`Hồ sơ: ${profile.name || 'Học viên'} • Cấp ${profile.level} (${userRank.title}) • Nhấp để xem chi tiết`}
+            className="flex items-center gap-3 cursor-pointer group select-none"
           >
-            <div 
-              className="relative flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 via-emerald-500 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform"
-            >
-              <div className="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center font-black text-emerald-400 text-base group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
-                {profile.name ? profile.name.charAt(0).toUpperCase() : 'U'}
-              </div>
-            </div>
+            <UserAvatar 
+              name={profile.name || 'U'}
+              level={profile.level}
+              size="md"
+              showLevelBadge={true}
+            />
 
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-sm sm:text-base tracking-tight text-white flex items-center gap-1.5 group-hover:text-emerald-400 transition-colors">
+                <span className={`font-extrabold text-sm sm:text-base tracking-tight ${userRank.nameClass} ${userRank.nameDropShadow} flex items-center gap-1.5 transition-all`}>
                   {profile.name || 'Học viên'}
-                  <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full">
-                    VIP Pro
-                  </span>
                 </span>
+                <div className="hidden sm:inline-flex">
+                  <UserRankBadge level={profile.level} size="sm" />
+                </div>
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span className="font-semibold text-emerald-400">Cấp {profile.level}</span>
+                <span className={`font-bold ${
+                  userRank.tier === 'mythic' ? 'text-rose-400' :
+                  userRank.tier === 'master' ? 'text-amber-400' :
+                  userRank.tier === 'vip' ? 'text-cyan-400' : 'text-emerald-400'
+                }`}>
+                  Cấp {profile.level}
+                </span>
                 <span>•</span>
                 <span className="hidden xs:inline">Còn {xpToNextLevel} XP lên Cấp {profile.level + 1}</span>
               </div>
             </div>
           </div>
 
-          {/* Gamification Counters: Streak 🔥, XP ⭐, Hearts ❤️ */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Daily Streak */}
             <div 
               title="Chuỗi ngày học liên tục"
               className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 border border-orange-500/20 rounded-2xl text-orange-400 font-bold text-xs sm:text-sm shadow-sm"
@@ -200,7 +220,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{profile.streak} <span className="hidden md:inline font-medium text-xs">ngày</span></span>
             </div>
 
-            {/* Total XP & Level Bar */}
             <div 
               title={`Tổng: ${profile.xp} XP - Tiến độ cấp ${profile.level}`}
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-300 font-bold text-xs sm:text-sm"
@@ -217,79 +236,46 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             </div>
 
-            {/* Hearts ❤️ */}
             <div 
               onClick={() => {
-                if (profile.hearts < profile.maxHearts) {
-                  refillHearts();
-                }
+                if (profile.hearts < 5) refillHearts();
               }}
-              title={profile.hearts < profile.maxHearts ? 'Nhấp để hồi phục full 5 tim' : 'Trái tim đầy đủ'}
-              className="cursor-pointer flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-2xl text-rose-400 font-bold text-xs sm:text-sm transition-all"
+              title="Trái tim học tập (Click để nạp đầy)"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400 font-bold text-xs sm:text-sm cursor-pointer hover:bg-rose-500/20 transition-all"
             >
-              <Heart className={`w-4 h-4 sm:w-5 sm:h-5 fill-rose-500 ${profile.hearts === 0 ? 'text-slate-600 fill-slate-700' : 'text-rose-500'}`} />
-              <span>{profile.hearts}/{profile.maxHearts}</span>
+              <Heart className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500 fill-rose-500" />
+              <span>{profile.hearts}/5</span>
             </div>
 
-            {/* TTS Voice Accent Switcher */}
-            <button
-              onClick={() => setAudioVoice(audioVoice === 'en-US' ? 'en-GB' : 'en-US')}
-              title={`Giọng phát âm hiện tại: ${audioVoice === 'en-US' ? 'Anh - Mỹ (US)' : 'Anh - Anh (UK)'}`}
-              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-2xl text-xs font-semibold text-slate-300 transition-all"
-            >
-              <Volume2 className="w-4 h-4 text-emerald-400" />
-              <span>{audioVoice === 'en-US' ? '🇺🇸 US' : '🇬🇧 UK'}</span>
-            </button>
-
-            {/* Add Custom Word button */}
             <button
               onClick={onOpenAddWord}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-2xl shadow-lg shadow-emerald-500/20 transition-all hover:scale-105"
+              title="Thêm từ vựng mới thủ công"
+              className="p-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 rounded-2xl transition-all"
             >
-              <PlusCircle className="w-4 h-4" />
-              <span>Thêm từ</span>
+              <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
-            {/* Daily Target Settings */}
-            <button
-              onClick={onOpenDailySettings}
-              title={`Cài đặt Mục tiêu Ngày (${profile.targetDailyNewWords || 15} từ/ngày)`}
-              className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-emerald-400 rounded-2xl transition-all"
-            >
-              <Target className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-
-            {/* Achievements & Backup Modals */}
             <button
               onClick={onOpenAchievements}
-              title="Danh hiệu & Thành tựu"
+              title="Huy hiệu & Thành Tựu"
               className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-amber-400 rounded-2xl transition-all"
             >
               <Award className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-
-            <button
-              onClick={onOpenBackup}
-              title="Sao lưu & Khôi phục Dữ liệu"
-              className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-emerald-400 rounded-2xl transition-all"
-            >
-              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </div>
         </div>
 
         {/* ========================================================================= */}
-        {/* RESTRUCTURED NAVBAR: COMPACT DROPDOWN GROUPS (FITS 1 CLEAN ROW)          */}
+        {/* RESTRUCTURED NAVBAR: COMPACT DROPDOWN GROUPS + STANDALONE 4-SKILLS TAB    */}
         {/* ========================================================================= */}
-        <nav className="flex items-center space-x-1.5 sm:space-x-2 py-2 border-t border-slate-850/80">
+        <nav className="flex items-center space-x-1.5 sm:space-x-2 py-2 border-t border-slate-850/80 overflow-visible relative">
           
-          {/* 1. Dashboard Direct Tab */}
           <button
             onClick={() => {
               setActiveTab('dashboard');
               setOpenDropdown(null);
             }}
-            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+            className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
               activeTab === 'dashboard'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
@@ -299,8 +285,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>Tổng Quan</span>
           </button>
 
-          {/* 2. Dropdown Navigation Groups */}
-          {dropdownGroups.map((group) => {
+          {dropdownGroups.filter(g => g.id === 'vocab_group').map((group) => {
             const isGroupActive = group.activeTabs.includes(activeTab);
             const isOpen = openDropdown === group.id;
 
@@ -313,7 +298,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <button
                   onClick={() => setOpenDropdown(isOpen ? null : group.id)}
-                  className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 border ${
+                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
                     isGroupActive
                       ? 'bg-emerald-500/15 border-emerald-400/60 text-emerald-300 shadow-sm'
                       : isOpen
@@ -323,12 +308,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <span>{group.icon}</span>
                   <span>{group.label}</span>
+                  {group.badge && (
+                    <span className="px-1.5 py-0.2 text-[10px] font-black bg-rose-500 text-white rounded-full">
+                      {group.badge}
+                    </span>
+                  )}
                   <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-emerald-400' : 'text-slate-400'}`} />
                 </button>
 
-                {/* Dropdown Card */}
                 {isOpen && (
-                  <div className="absolute left-0 mt-1.5 w-72 sm:w-80 bg-slate-900/95 backdrop-blur-2xl border border-slate-750 rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
+                  <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 bg-slate-900/98 backdrop-blur-2xl border border-slate-700/80 rounded-2xl p-2 shadow-2xl z-[9999] animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
                     {group.items.map((item) => {
                       const isItemActive = activeTab === item.id;
                       return (
@@ -341,6 +330,252 @@ export const Navbar: React.FC<NavbarProps> = ({
                           className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
                             isItemActive
                               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                              : 'hover:bg-slate-800/80 text-slate-200'
+                          }`}
+                        >
+                          <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5">
+                            {item.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-extrabold text-xs sm:text-sm block text-white">
+                                {item.label}
+                              </span>
+                              {item.badge && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full">
+                                  {item.badge}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+                              {item.desc}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {dropdownGroups.filter(g => g.id === 'practice_group').map((group) => {
+            const isGroupActive = group.activeTabs.includes(activeTab);
+            const isOpen = openDropdown === group.id;
+
+            return (
+              <div
+                key={group.id}
+                className="relative"
+                onMouseEnter={() => handleMouseEnter(group.id)}
+                onMouseLeave={handleMouseLeave}
+              >
+                <button
+                  onClick={() => setOpenDropdown(isOpen ? null : group.id)}
+                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                    isGroupActive
+                      ? 'bg-amber-500/15 border-amber-400/60 text-amber-300 shadow-sm'
+                      : isOpen
+                      ? 'bg-slate-850 border-slate-700 text-white'
+                      : 'border-transparent text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <span>{group.icon}</span>
+                  <span>{group.label}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-amber-400' : 'text-slate-400'}`} />
+                </button>
+
+                {isOpen && (
+                  <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 bg-slate-900/98 backdrop-blur-2xl border border-slate-700/80 rounded-2xl p-2 shadow-2xl z-[9999] animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
+                    {group.items.map((item) => {
+                      const isItemActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            setOpenDropdown(null);
+                          }}
+                          className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
+                            isItemActive
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'hover:bg-slate-800/80 text-slate-200'
+                          }`}
+                        >
+                          <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5">
+                            {item.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-extrabold text-xs sm:text-sm block text-white">
+                              {item.label}
+                            </span>
+                            <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+                              {item.desc}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* 4. Dropdown: 🎯 4 Kỹ Năng */}
+          <div
+            className="relative"
+            onMouseEnter={() => handleMouseEnter('skills_group')}
+            onMouseLeave={handleMouseLeave}
+          >
+            <button
+              onClick={() => {
+                setActiveTab('four_skills');
+                setOpenDropdown(openDropdown === 'skills_group' ? null : 'skills_group');
+              }}
+              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                activeTab === 'four_skills'
+                  ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-md shadow-cyan-500/20 font-black'
+                  : openDropdown === 'skills_group'
+                  ? 'bg-slate-850 border-slate-700 text-white'
+                  : 'border-transparent text-slate-300 hover:text-white hover:bg-slate-900/80'
+              }`}
+            >
+              <Headphones className="w-4 h-4 text-cyan-400" />
+              <span>4 Kỹ Năng</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${openDropdown === 'skills_group' ? 'rotate-180 text-cyan-400' : 'text-slate-400'}`} />
+            </button>
+
+            {openDropdown === 'skills_group' && (
+              <div className="absolute top-full left-0 mt-2 w-72 sm:w-80 bg-slate-900/98 backdrop-blur-2xl border border-slate-700/80 rounded-2xl p-2 shadow-2xl z-[9999] animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab('four_skills');
+                    setActiveFourSkill('listening');
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                >
+                  <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-cyan-400 group-hover:scale-110 transition-transform">
+                    <Headphones className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-extrabold text-xs sm:text-sm block text-white group-hover:text-cyan-300 transition-colors">
+                      🎧 Luyện Nghe (Listening Lab)
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+                      Nghe hội thoại, podcast & tra từ 1-chạm
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('four_skills');
+                    setActiveFourSkill('reading');
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                >
+                  <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-emerald-400 group-hover:scale-110 transition-transform">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-extrabold text-xs sm:text-sm block text-white group-hover:text-emerald-300 transition-colors">
+                      📖 Luyện Đọc (Reading Studio)
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+                      Bài đọc B1-C1 thực tế & trắc nghiệm đọc hiểu
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('four_skills');
+                    setActiveFourSkill('speaking');
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                >
+                  <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-purple-400 group-hover:scale-110 transition-transform">
+                    <Mic className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-extrabold text-xs sm:text-sm block text-white group-hover:text-purple-300 transition-colors">
+                      🗣️ Luyện Nói (Speaking AI)
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+                      Roleplay hội thoại & chấm điểm qua Mic AI
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab('four_skills');
+                    setActiveFourSkill('writing');
+                    setOpenDropdown(null);
+                  }}
+                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                >
+                  <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-amber-400 group-hover:scale-110 transition-transform">
+                    <PenTool className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="font-extrabold text-xs sm:text-sm block text-white group-hover:text-amber-300 transition-colors">
+                      ✍️ Luyện Viết (Writing Studio)
+                    </span>
+                    <span className="text-[11px] text-slate-400 block mt-0.5 truncate">
+                      Viết email, báo cáo, bài luận & sửa bài AI
+                    </span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {dropdownGroups.filter(g => g.id === 'ai_group').map((group) => {
+            const isGroupActive = group.activeTabs.includes(activeTab);
+            const isOpen = openDropdown === group.id;
+
+            return (
+              <div
+                key={group.id}
+                className="relative"
+                onMouseEnter={() => handleMouseEnter(group.id)}
+                onMouseLeave={handleMouseLeave}
+              >
+                <button
+                  onClick={() => setOpenDropdown(isOpen ? null : group.id)}
+                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                    isGroupActive
+                      ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300 shadow-sm'
+                      : isOpen
+                      ? 'bg-slate-850 border-slate-700 text-white'
+                      : 'border-transparent text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <span>{group.icon}</span>
+                  <span>{group.label}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-cyan-400' : 'text-slate-400'}`} />
+                </button>
+
+                {isOpen && (
+                  <div className="absolute top-full right-0 sm:left-auto sm:right-0 mt-2 w-72 sm:w-80 bg-slate-900/98 backdrop-blur-2xl border border-slate-700/80 rounded-2xl p-2 shadow-2xl z-[9999] animate-in fade-in slide-in-from-top-2 duration-150 space-y-1">
+                    {group.items.map((item) => {
+                      const isItemActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActiveTab(item.id);
+                            setOpenDropdown(null);
+                          }}
+                          className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
+                            isItemActive
+                              ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                               : 'hover:bg-slate-800/80 text-slate-200'
                           }`}
                         >

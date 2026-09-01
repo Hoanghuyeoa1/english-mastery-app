@@ -46,7 +46,9 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
     gainXP, 
     consumeHeart, 
     audioVoice, 
-    audioSpeed 
+    audioSpeed,
+    recordMistake,
+    recordMistakeCorrect
   } = useAppStore();
 
   const [activeMode, setActiveMode] = useState<ArcadeMode>(() => {
@@ -178,6 +180,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
       // ĐÚNG CẶP!
       const wordText = selectedTile.type === 'en' ? selectedTile.text : tile.text;
       speakWord(wordText, audioVoice, audioSpeed);
+      recordMistakeCorrect(tile.wordId);
 
       const nextCombo = matchCombo + 1;
       setMatchCombo(nextCombo);
@@ -207,6 +210,10 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
       }
     } else {
       // SAI CẶP!
+      const enTile = selectedTile.type === 'en' ? selectedTile : tile.type === 'en' ? tile : null;
+      if (enTile) {
+        recordMistake({ word: enTile.text }, 'speed_match');
+      }
       setWrongTileIds([selectedTile.id, tile.id]);
       setMatchCombo(0);
       setTimeout(() => {
@@ -266,6 +273,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
     if (userInput === target) {
       // ĐÚNG!
       setDictationFeedback('correct');
+      if (dictationWord) recordMistakeCorrect(dictationWord.id || dictationWord.word);
       gainXP(25);
       setTotalXpSession((prev) => prev + 25);
       setStreakCount((prev) => prev + 1);
@@ -277,6 +285,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
     } else {
       // SAI!
       setDictationFeedback('wrong');
+      if (dictationWord) recordMistake(dictationWord, 'dictation');
       consumeHeart();
       setTimeout(() => setDictationFeedback(null), 1200);
     }
@@ -325,6 +334,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
 
     if (option === quizWord.meaning) {
       setQuizFeedback('correct');
+      recordMistakeCorrect(quizWord.id || quizWord.word);
       speakWord(quizWord.word, audioVoice, audioSpeed);
       gainXP(15);
       setTotalXpSession((prev) => prev + 15);
@@ -336,6 +346,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
       }, 1200);
     } else {
       setQuizFeedback('wrong');
+      recordMistake(quizWord, 'quiz');
       consumeHeart();
       setTimeout(() => {
         initClassicQuizRound();

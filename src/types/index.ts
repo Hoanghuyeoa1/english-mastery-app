@@ -68,9 +68,25 @@ export interface Achievement {
   progress: number;
 }
 
+export interface MistakeRecord {
+  id: string; // ID hoặc normalized word
+  word: string;
+  ipa?: string;
+  meaning: string;
+  example?: string;
+  tag?: VocabTag;
+  mistakeCount: number;
+  lastMistakeAt: string; // ISO string
+  consecutiveCorrect: number; // Đếm số lần ôn đúng liên tiếp (khi đạt 2 -> tự động resolved)
+  resolved: boolean;
+  source?: 'srs_again' | 'quiz' | 'scramble' | 'dictation' | 'speed_match' | 'pronunciation' | 'custom';
+}
+
 export type ActiveTab = 
   | 'dashboard' 
   | 'flashcards' 
+  | 'mistakes'
+  | 'four_skills'
   | 'quiz' 
   | 'arcade'
   | 'pronunciation' 
