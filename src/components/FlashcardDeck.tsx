@@ -39,6 +39,7 @@ import { VoicePronunciationModal } from './VoicePronunciationModal';
 
 type QueueMode = 'DUE' | 'NEW';
 type FilterTag = 'ALL' | 'FAVORITE' | 'MISTAKES' | 'SAVED_SENTENCES' | VocabTag;
+type FilterLevel = 'ALL' | 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
 
 interface FlashcardDeckProps {
   onNavigate?: (tab: ActiveTab) => void;
@@ -80,6 +81,7 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [selectedTag, setSelectedTag] = useState<FilterTag>('ALL');
+  const [selectedLevel, setSelectedLevel] = useState<FilterLevel>('ALL');
   const [queueMode, setQueueMode] = useState<QueueMode>('NEW');
   
   // 1. CỐ ĐỊNH DANH SÁCH PHIÊN HỌC (FROZEN SESSION QUEUE)
@@ -136,38 +138,49 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
     return Object.values(mistakeBank || {}).filter((m) => !m.resolved).length;
   }, [mistakeBank]);
 
-  // Đếm số lượng từ mới chưa học theo từng tag
-  const getUnlearnedCountByTag = useCallback((tag: FilterTag) => {
+  // Đếm số lượng từ mới chưa học theo từng tag và level
+  const getUnlearnedCountByTag = useCallback((tag: FilterTag, level?: FilterLevel) => {
+    const targetLevel = level || selectedLevel;
     return vocabularyList.filter((w) => {
       const isUnlearned = w.srsLevel === 0 && !w.lastReviewedDate;
       if (!isUnlearned) return false;
       const isSentence = isSentenceItem(w);
       if (tag === 'SAVED_SENTENCES') return isSentence;
-      if (tag === 'FAVORITE') return !isSentence && !!w.isFavorite;
       if (tag === 'MISTAKES') return false;
+
+      const matchLevel = targetLevel === 'ALL' || w.level === targetLevel;
+      if (!matchLevel) return false;
+
+      if (tag === 'FAVORITE') return !isSentence && !!w.isFavorite;
       if (tag === 'ALL') return !isSentence;
       return !isSentence && w.tag === tag;
     }).length;
-  }, [vocabularyList]);
+  }, [vocabularyList, selectedLevel]);
 
-  // Đếm số từ đến hạn ôn theo từng tag
-  const getDueCountByTag = useCallback((tag: FilterTag) => {
+  // Đếm số từ đến hạn ôn theo từng tag và level
+  const getDueCountByTag = useCallback((tag: FilterTag, level?: FilterLevel) => {
+    const targetLevel = level || selectedLevel;
     return vocabularyList.filter((w) => {
       const isDue = isDueForReview(w.nextReviewDate);
       const isAlreadyLearned = w.srsLevel > 0 || !!w.lastReviewedDate;
       if (!isDue || !isAlreadyLearned) return false;
       const isSentence = isSentenceItem(w);
       if (tag === 'SAVED_SENTENCES') return isSentence;
-      if (tag === 'FAVORITE') return !isSentence && !!w.isFavorite;
       if (tag === 'MISTAKES') return false;
+
+      const matchLevel = targetLevel === 'ALL' || w.level === targetLevel;
+      if (!matchLevel) return false;
+
+      if (tag === 'FAVORITE') return !isSentence && !!w.isFavorite;
       if (tag === 'ALL') return !isSentence;
       return !isSentence && w.tag === tag;
     }).length;
-  }, [vocabularyList]);
+  }, [vocabularyList, selectedLevel]);
 
   // Hàm nạp chính xác danh sách từ cho phiên học (Exact Batch Slicing)
-  const loadSessionQueue = useCallback((mode: QueueMode, tag: FilterTag, customBatchSize?: number) => {
+  const loadSessionQueue = useCallback((mode: QueueMode, tag: FilterTag, level?: FilterLevel, customBatchSize?: number) => {
     const list = vocabularyList;
+    const targetLevel = level || selectedLevel;
     let words: VocabWord[] = [];
 
     if (tag === 'MISTAKES') {
@@ -208,6 +221,10 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
 
         const isSentence = isSentenceItem(w);
         if (tag === 'SAVED_SENTENCES') return isSentence;
+        
+        const matchLevel = targetLevel === 'ALL' || w.level === targetLevel;
+        if (!matchLevel) return false;
+
         if (tag === 'FAVORITE') return !isSentence && !!w.isFavorite;
         if (tag === 'ALL') return !isSentence;
         return !isSentence && w.tag === tag;
@@ -220,6 +237,10 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
 
         const isSentence = isSentenceItem(w);
         if (tag === 'SAVED_SENTENCES') return isSentence;
+
+        const matchLevel = targetLevel === 'ALL' || w.level === targetLevel;
+        if (!matchLevel) return false;
+
         if (tag === 'FAVORITE') return !isSentence && !!w.isFavorite;
         if (tag === 'ALL') return !isSentence;
         return !isSentence && w.tag === tag;
@@ -234,13 +255,13 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
     setIsSessionCompleted(false);
     setIsFlipped(false);
     setIsExampleRevealed(false);
-  }, [vocabularyList, mistakeBank, profile.targetDailyNewWords]);
+  }, [vocabularyList, mistakeBank, profile.targetDailyNewWords, selectedLevel]);
 
-  // Tự động tải phiên học ban đầu và khi chuyển đổi Tab lọc / Queue Mode
+  // Tự động tải phiên học ban đầu và khi chuyển đổi Tab lọc / Queue Mode / Cấp độ CEFR
   useEffect(() => {
-    loadSessionQueue(queueMode, selectedTag);
+    loadSessionQueue(queueMode, selectedTag, selectedLevel);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queueMode, selectedTag]);
+  }, [queueMode, selectedTag, selectedLevel]);
 
   // Kích thước mảng và vị trí thẻ hiện tại
   const totalWords = sessionWords.length;
@@ -518,7 +539,7 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
   const handleResetVocabulary = useCallback(() => {
     resetVocabularyProgress();
     setTimeout(() => {
-      loadSessionQueue('NEW', 'ALL', 15);
+      loadSessionQueue('NEW', 'ALL', 'ALL', 15);
       showToast('🎉 Đã khởi tạo lại trạng thái kho từ vựng! Toàn bộ 1.000+ từ vựng đã sẵn sàng để học lại từ đầu.');
       fireSuccessConfetti();
     }, 150);
@@ -543,6 +564,8 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
     'Business', 
     'Academic', 
     'Daily', 
+    'Travel',
+    'Emotions',
     'Idioms'
   ];
 
@@ -776,58 +799,93 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
         </div>
       )}
 
-      {/* 3. TAG & FAVORITE FILTER BAR */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap pl-1">
-          Lọc theo:
-        </span>
-        {tagsList.map((tag) => {
-          const isSelected = selectedTag === tag;
-          const unlearnedInThisTag = getUnlearnedCountByTag(tag);
-          const dueInThisTag = getDueCountByTag(tag);
+      {/* 3. MULTI-LEVEL FILTER CONTROLS: CEFR & TOPICS */}
+      <div className="space-y-2 bg-slate-900/60 border border-slate-800/80 p-3 rounded-2xl">
+        {/* Level CEFR Selector */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap pl-1 mr-1">
+            Cấp độ CEFR:
+          </span>
+          {(['ALL', 'A1', 'A2', 'B1', 'B2', 'C1'] as FilterLevel[]).map((lvl) => {
+            const isSelected = selectedLevel === lvl;
+            const levelColor = 
+              lvl === 'A1' || lvl === 'A2'
+                ? 'text-emerald-400'
+                : lvl === 'B1' || lvl === 'B2'
+                ? 'text-sky-400'
+                : lvl === 'C1'
+                ? 'text-purple-400'
+                : 'text-slate-300';
 
-          let label: string = tag;
-          if (tag === 'ALL') {
-            label = queueMode === 'NEW' 
-              ? `📚 Từ Vựng Cốt Lõi (${unlearnedInThisTag})`
-              : `📚 Từ Vựng Cốt Lõi (${dueInThisTag})`;
-          } else if (tag === 'FAVORITE') {
-            label = `⭐ Yêu Thích (${favoriteCount})`;
-          } else if (tag === 'MISTAKES') {
-            label = `🚨 Sổ Bẫy Lỗi (${unresolvedMistakesCount})`;
-          } else if (tag === 'SAVED_SENTENCES') {
-            label = `📝 Đoạn Dịch / Đã Lưu (${savedSentencesCount})`;
-          } else {
-            label = queueMode === 'NEW' 
-              ? `${tag} (${unlearnedInThisTag})` 
-              : `${tag} (${dueInThisTag})`;
-          }
+            return (
+              <button
+                key={lvl}
+                onClick={() => setSelectedLevel(lvl)}
+                className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                  isSelected
+                    ? 'bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20'
+                    : `bg-slate-800/80 hover:bg-slate-750 border border-slate-750 ${levelColor}`
+                }`}
+              >
+                {lvl === 'ALL' ? 'Tất cả Level' : `Level ${lvl}`}
+              </button>
+            );
+          })}
+        </div>
 
-          return (
-            <button
-              key={tag}
-              onClick={() => {
-                setSelectedTag(tag);
-              }}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                isSelected
-                  ? tag === 'MISTAKES'
-                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50 font-bold shadow-sm'
-                    : tag === 'SAVED_SENTENCES'
-                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-bold shadow-sm'
-                    : tag === 'FAVORITE'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold shadow-sm'
-                    : 'bg-slate-700 text-emerald-400 border border-emerald-500/40 font-bold shadow-sm'
-                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
-              }`}
-            >
-              {tag === 'FAVORITE' && <Star className={`w-3.5 h-3.5 ${isSelected ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />}
-              {tag === 'MISTAKES' && <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />}
-              {tag === 'SAVED_SENTENCES' && <FileText className="w-3.5 h-3.5 text-cyan-400" />}
-              <span>{label}</span>
-            </button>
-          );
-        })}
+        {/* Tags / Topics Filter Bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-slate-800/80">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap pl-1 mr-1">
+            Chủ đề & Thẻ:
+          </span>
+          {tagsList.map((tag) => {
+            const isSelected = selectedTag === tag;
+            const unlearnedInThisTag = getUnlearnedCountByTag(tag);
+            const dueInThisTag = getDueCountByTag(tag);
+
+            let label: string = tag;
+            if (tag === 'ALL') {
+              label = queueMode === 'NEW' 
+                ? `📚 Tất Cả (${unlearnedInThisTag})`
+                : `📚 Tất Cả (${dueInThisTag})`;
+            } else if (tag === 'FAVORITE') {
+              label = `⭐ Yêu Thích (${favoriteCount})`;
+            } else if (tag === 'MISTAKES') {
+              label = `🚨 Bẫy Lỗi (${unresolvedMistakesCount})`;
+            } else if (tag === 'SAVED_SENTENCES') {
+              label = `📝 Đoạn Dịch (${savedSentencesCount})`;
+            } else {
+              label = queueMode === 'NEW' 
+                ? `${tag} (${unlearnedInThisTag})` 
+                : `${tag} (${dueInThisTag})`;
+            }
+
+            return (
+              <button
+                key={tag}
+                onClick={() => {
+                  setSelectedTag(tag);
+                }}
+                className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  isSelected
+                    ? tag === 'MISTAKES'
+                      ? 'bg-rose-500/20 text-rose-300 border border-rose-500/50 font-bold shadow-sm'
+                      : tag === 'SAVED_SENTENCES'
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-bold shadow-sm'
+                      : tag === 'FAVORITE'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold shadow-sm'
+                      : 'bg-slate-700 text-emerald-400 border border-emerald-500/40 font-bold shadow-sm'
+                    : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                {tag === 'FAVORITE' && <Star className={`w-3 h-3 ${isSelected ? 'fill-amber-400 text-amber-400' : 'text-amber-400'}`} />}
+                {tag === 'MISTAKES' && <AlertTriangle className="w-3 h-3 text-rose-400" />}
+                {tag === 'SAVED_SENTENCES' && <FileText className="w-3 h-3 text-cyan-400" />}
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* ========================================================================= */}
@@ -1155,7 +1213,7 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
                 
                 {/* Top Bar of Front */}
                 <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center flex-wrap gap-1.5">
                     {isCurrentSentence ? (
                       <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-cyan-500/10 text-cyan-400 rounded-full border border-cyan-500/20 flex items-center gap-1.5">
                         <FileText className="w-3.5 h-3.5" />
@@ -1163,7 +1221,23 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
                       </span>
                     ) : (
                       <>
-                        <span className="text-xs font-bold uppercase tracking-wider px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">
+                        {currentWord?.level && (
+                          <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${
+                            currentWord.level === 'A1' || currentWord.level === 'A2'
+                              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                              : currentWord.level === 'B1' || currentWord.level === 'B2'
+                              ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+                              : 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+                          }`}>
+                            {currentWord.level}
+                          </span>
+                        )}
+                        {currentWord?.topic && (
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 bg-cyan-950/60 text-cyan-300 rounded-full border border-cyan-800/60">
+                            {currentWord.topic}
+                          </span>
+                        )}
+                        <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 bg-slate-800 text-slate-300 rounded-full border border-slate-700">
                           {currentWord?.tag}
                         </span>
                         {currentWord?.partOfSpeech && (
@@ -1346,19 +1420,25 @@ export const FlashcardDeck: React.FC<FlashcardDeckProps> = ({ onNavigate }) => {
                     </h3>
                   </div>
 
-                  {/* Example Context (Chỉ hiển thị nếu khác với từ khóa chính) */}
-                  {currentWord?.example && currentWord.example.trim() !== currentWord.word.trim() && (
-                    <div className="bg-slate-850/80 border border-slate-700/60 rounded-2xl p-4 space-y-1.5">
-                      <p className="text-sm sm:text-base text-slate-200 font-medium leading-relaxed">
-                        {renderMaskedExample(currentWord.example, currentWord.word)}
-                      </p>
-                      {currentWord?.exampleMeaning && (
-                        <p className="text-xs sm:text-sm text-slate-400">
-                          → {currentWord.exampleMeaning}
+                  {/* Example Context (Hỗ trợ exampleEn và exampleVi) */}
+                  {(() => {
+                    const exEn = currentWord?.exampleEn || currentWord?.example || '';
+                    const exVi = currentWord?.exampleVi || currentWord?.exampleMeaning || '';
+                    if (!exEn || exEn.trim() === currentWord?.word?.trim()) return null;
+
+                    return (
+                      <div className="bg-slate-850/80 border border-slate-700/60 rounded-2xl p-4 space-y-1.5">
+                        <p className="text-sm sm:text-base text-slate-200 font-medium leading-relaxed">
+                          {renderMaskedExample(exEn, currentWord?.word || '')}
                         </p>
-                      )}
-                    </div>
-                  )}
+                        {exVi && (
+                          <p className="text-xs sm:text-sm text-slate-400">
+                            → {exVi}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Collocations & Synonyms */}
                   {currentWord?.collocations && currentWord.collocations.length > 0 && (

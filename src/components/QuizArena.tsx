@@ -454,7 +454,7 @@ export const QuizArena: React.FC<QuizArenaProps> = ({ defaultCategory }) => {
             Chủ đề:
           </span>
           {[
-            { id: 'ALL', label: 'Tất cả (10.000+ từ)' },
+            { id: 'ALL', label: `Tất cả (${vocabularyList.length.toLocaleString()} từ)` },
             { id: 'Tech', label: '💻 Tech / IT' },
             { id: 'Business', label: '💼 Business' },
             { id: 'IELTS', label: '🎓 IELTS' },

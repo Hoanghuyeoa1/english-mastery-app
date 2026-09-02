@@ -3,7 +3,9 @@
 export type SRSGrade = 0 | 1 | 2 | 3;
 // 0: Again (Quên) | 1: Hard (Khó) | 2: Good (Tốt) | 3: Easy (Dễ)
 
-export type VocabTag = 'IELTS' | 'TOEIC' | 'Business' | 'Academic' | 'Daily' | 'Idioms' | 'Tech';
+export type VocabTag = 'IELTS' | 'TOEIC' | 'Business' | 'Academic' | 'Daily' | 'Idioms' | 'Tech' | 'Travel' | 'Emotions';
+
+export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
 export interface VocabWord {
   id: string;
@@ -14,9 +16,11 @@ export interface VocabWord {
   meaning: string;
   definitionEn?: string;
   example: string;
+  exampleEn?: string;          // Câu ví dụ tiếng Anh
   exampleMeaning?: string;
   exampleVi?: string;          // Nghĩa tiếng Việt của câu ví dụ
   category?: string;           // Danh mục chi tiết: 'IT / Tech', 'Academic / IELTS', 'Business / Workplace', 'TOEIC Core', 'Oxford Core'
+  topic?: string;              // Chủ đề tiếng Việt: 'Công việc', 'Công nghệ', 'Giao tiếp hàng ngày', 'Du lịch', 'Học thuật', 'Cảm xúc'
   level?: string;              // Cấp độ CEFR: A1, A2, B1, B2, C1, C2
   collocations?: string[];
   synonyms?: string[];
@@ -29,6 +33,9 @@ export interface VocabWord {
   interval: number;            // Khoảng cách ngày đến lần ôn tiếp theo
   easeFactor: number;          // Hệ số dễ (Default: 2.5, min: 1.3)
   lastReviewedDate?: string;
+  firstLearnedAt?: string;     // Mốc thời gian ĐẦU TIÊN học từ này (CHỈ GHI 1 LẦN DUY NHẤT)
+  todayNewReviewedAt?: string; // Mốc thời gian hoàn thành ôn tập ở Chế độ 2 (Từ mới hôm nay)
+  todayPoolReviewedAt?: string;// Mốc thời gian hoàn thành ôn tập ở Chế độ 3 (Toàn bộ kho)
 }
 
 export interface UserProfile {
@@ -46,6 +53,8 @@ export interface UserProfile {
   extraNewWordsBonus: number;    // Số từ mới nạp thêm tạm thời trong ngày hôm nay
   isOnboarded?: boolean;         // Đã hoàn thành nhập tên lần đầu chưa
   targetGoal?: 'ielts' | 'toeic' | 'tech' | 'business' | 'daily';
+  equippedTitle?: string;        // Danh hiệu đang trang bị (mặc định: Tân thủ)
+  unlockedTitles?: string[];     // Danh sách ID các danh hiệu đã mở khóa
 }
 
 export interface DailyProgress {
@@ -94,7 +103,8 @@ export type ActiveTab =
   | 'tutor' 
   | 'vocabulary' 
   | 'dictionary' 
-  | 'translator';
+  | 'translator'
+  | 'admin';
 
 export type ToeicSkill = 'listening' | 'reading' | 'speaking' | 'writing';
 export type ToeicPart = 
@@ -176,3 +186,40 @@ export interface RoleplayScenario {
   suggestedPrompts?: string[];
   steps?: string[];
 }
+
+export type SyncStatus = 'idle' | 'syncing' | 'synced' | 'error' | 'offline';
+
+export interface CloudSyncInfo {
+  status: SyncStatus;
+  lastSyncedAt: string | null;
+  errorMessage: string | null;
+  userEmail: string | null;
+  userId: string | null;
+}
+
+export interface CloudVocabulary {
+  id: string;
+  word: string;
+  phonetic?: string;
+  ipa?: string;
+  part_of_speech?: string;
+  meaning: string;
+  example?: string;
+  example_en?: string;
+  example_vi?: string;
+  category?: string;
+  topic?: string;
+  level?: string;
+  created_at?: string;
+}
+
+export interface AdminUserProfile {
+  id: string;
+  display_name: string | null;
+  level: number;
+  xp: number;
+  streak: number;
+  updated_at: string | null;
+}
+
+

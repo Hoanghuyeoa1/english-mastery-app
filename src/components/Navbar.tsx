@@ -21,9 +21,17 @@ import {
   Languages,
   ShieldAlert,
   Headphones,
-  PenTool
+  PenTool,
+  Cloud,
+  CloudCheck,
+  RefreshCw,
+  WifiOff,
+  RotateCcw,
+  BookmarkCheck,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useCloudSyncStore } from '../services/cloudSyncService';
+import { useIsAdmin } from '../utils/adminAuth';
 import { ActiveTab } from '../types';
 import { UserAvatar, UserRankBadge } from './UserProfileBadge';
 import { getUserRankInfo, getXpLevelProgress } from '../utils/userRank';
@@ -36,6 +44,9 @@ interface NavbarProps {
   onOpenAchievements: () => void;
   onOpenAddWord: () => void;
   onOpenDailySettings: () => void;
+  onOpenAuthSync: () => void;
+  onOpenReviewModal?: () => void;
+  onOpenMyVocabBank?: () => void;
 }
 
 interface DropdownGroup {
@@ -45,11 +56,12 @@ interface DropdownGroup {
   icon: React.ReactNode;
   activeTabs: ActiveTab[];
   items: {
-    id: ActiveTab;
+    id?: ActiveTab;
     label: string;
     desc: string;
     badge?: string;
     icon: React.ReactNode;
+    onClick?: () => void;
   }[];
 }
 
@@ -61,8 +73,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenAchievements,
   onOpenAddWord,
   onOpenDailySettings,
+  onOpenAuthSync,
+  onOpenReviewModal,
+  onOpenMyVocabBank,
 }) => {
   const { profile, refillHearts, audioVoice, setAudioVoice, mistakeBank, setActiveFourSkill } = useAppStore();
+  const { user, status, isOnline } = useCloudSyncStore();
+  const isAdmin = useIsAdmin();
 
   const unresolvedMistakeCount = Object.values(mistakeBank || {}).filter((m) => !m.resolved).length;
   const xpProgress = getXpLevelProgress(profile.xp);
@@ -102,6 +119,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           icon: <Brain className="w-4 h-4 text-emerald-400" />,
         },
         {
+          label: 'Ôn Tập Từ Vựng',
+          desc: 'Trung tâm ôn tập SRS: Đến hạn, từ mới & kho từ',
+          icon: <RotateCcw className="w-4 h-4 text-emerald-400" />,
+          onClick: onOpenReviewModal,
+        },
+        {
+          label: 'Kho Từ Của Tôi',
+          desc: 'Kho từ vựng tích lũy cá nhân qua SRS',
+          icon: <BookmarkCheck className="w-4 h-4 text-cyan-400" />,
+          onClick: onOpenMyVocabBank,
+        },
+        {
           id: 'mistakes',
           label: 'Sổ Bẫy Lỗi Sai',
           desc: 'Tự động bắt từ hay quên & ôn cứu hộ',
@@ -116,7 +145,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         },
         {
           id: 'dictionary',
-          label: 'Từ Điển Live 10.000+',
+          label: 'Từ Điển Live',
           desc: 'Tra cứu siêu tốc & ngữ nghĩa chuẩn',
           icon: <Search className="w-4 h-4 text-amber-400" />,
         },
@@ -247,13 +276,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{profile.hearts}/5</span>
             </div>
 
-            <button
-              onClick={onOpenAddWord}
-              title="Thêm từ vựng mới thủ công"
-              className="p-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 rounded-2xl transition-all"
-            >
-              <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
+            {/* Thêm từ mới thủ công: Chỉ hiển thị cho tài khoản Quản Trị Viên */}
+            {isAdmin && (
+              <button
+                onClick={onOpenAddWord}
+                title="Thêm từ vựng mới (Dành cho Quản trị viên)"
+                className="p-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 rounded-2xl transition-all"
+              >
+                <PlusCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            )}
 
             <button
               onClick={onOpenAchievements}
@@ -261,6 +293,51 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-amber-400 rounded-2xl transition-all"
             >
               <Award className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            {/* Cloud Sync Status / Auth Button */}
+            <button
+              onClick={onOpenAuthSync}
+              title={
+                !user
+                  ? 'Đồng bộ đám mây (Supabase) - Lưu trữ đa thiết bị'
+                  : status === 'syncing'
+                  ? 'Đang đồng bộ dữ liệu với Cloud...'
+                  : !isOnline
+                  ? 'Đang offline (Đã lưu tại LocalStorage)'
+                  : 'Dữ liệu đã được lưu an toàn trên Cloud (Supabase)'
+              }
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs sm:text-sm font-bold border transition-all ${
+                !user
+                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400 hover:text-emerald-300 shadow-sm'
+                  : status === 'syncing'
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                  : !isOnline
+                  ? 'bg-slate-900 border-slate-800 text-slate-400'
+                  : 'bg-teal-500/10 hover:bg-teal-500/20 border-teal-500/30 text-teal-300'
+              }`}
+            >
+              {!user ? (
+                <>
+                  <Cloud className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-400" />
+                  <span className="hidden md:inline">Sync Cloud</span>
+                </>
+              ) : status === 'syncing' ? (
+                <>
+                  <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
+                  <span className="hidden md:inline">Đang lưu...</span>
+                </>
+              ) : !isOnline ? (
+                <>
+                  <WifiOff className="w-4 h-4 text-slate-400" />
+                  <span className="hidden md:inline">Offline</span>
+                </>
+              ) : (
+                <>
+                  <CloudCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-teal-400" />
+                  <span className="hidden md:inline">Đã lưu</span>
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -322,9 +399,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                       const isItemActive = activeTab === item.id;
                       return (
                         <button
-                          key={item.id}
+                          key={item.label}
                           onClick={() => {
-                            setActiveTab(item.id);
+                            if (item.onClick) {
+                              item.onClick();
+                            } else if (item.id) {
+                              setActiveTab(item.id as ActiveTab);
+                            }
                             setOpenDropdown(null);
                           }}
                           className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
@@ -392,9 +473,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                       const isItemActive = activeTab === item.id;
                       return (
                         <button
-                          key={item.id}
+                          key={item.label}
                           onClick={() => {
-                            setActiveTab(item.id);
+                            if (item.onClick) {
+                              item.onClick();
+                            } else if (item.id) {
+                              setActiveTab(item.id);
+                            }
                             setOpenDropdown(null);
                           }}
                           className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
@@ -568,9 +653,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                       const isItemActive = activeTab === item.id;
                       return (
                         <button
-                          key={item.id}
+                          key={item.label}
                           onClick={() => {
-                            setActiveTab(item.id);
+                            if (item.onClick) {
+                              item.onClick();
+                            } else if (item.id) {
+                              setActiveTab(item.id);
+                            }
                             setOpenDropdown(null);
                           }}
                           className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
@@ -598,6 +687,24 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             );
           })}
+
+          {/* Admin Tab - Chỉ hiển thị cho Quản trị viên hoang2003eoe@gmail.com */}
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setActiveTab('admin');
+                setOpenDropdown(null);
+              }}
+              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-black whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                activeTab === 'admin'
+                  ? 'bg-rose-500 text-white shadow-md shadow-rose-500/25 border-rose-400'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20 hover:text-white'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
+              <span>Quản Trị 🛡️</span>
+            </button>
+          )}
 
         </nav>
       </div>

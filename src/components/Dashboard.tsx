@@ -22,17 +22,24 @@ import {
   Lock,
   ChevronRight,
   TrendingUp,
-  ShieldCheck
+  ShieldCheck,
+  Play,
+  Layers
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
-import { isDueForReview } from '../services/srsAlgorithm';
+import { getDueReviewWords } from '../services/srsAlgorithm';
 import { speakWord } from '../services/speechService';
 import { ActiveTab } from '../types';
 import { ActivityHeatmap } from './ActivityHeatmap';
 import { UserAvatar, UserRankBadge } from './UserProfileBadge';
 import { getUserRankInfo, getXpLevelProgress } from '../utils/userRank';
 import { getDailyQuote } from '../data/dailyQuotes';
+import { ReviewModal } from './ReviewModal';
+import { MyVocabBankModal } from './MyVocabBankModal';
+import { AchievementsModal } from './AchievementsModal';
+import { getFourSkillsCompetency } from '../services/skillsCompetencyService';
+import { evaluateUserAchievements } from '../services/achievementService';
 
 interface DashboardProps {
   onNavigate: (tab: ActiveTab) => void;
@@ -40,7 +47,20 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
-  const { profile, vocabularyList, dailyHistory, mistakeBank, gainXP } = useAppStore();
+  const { profile, vocabularyList, srsProgressMap, dailyHistory, mistakeBank, gainXP } = useAppStore();
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isMyVocabBankOpen, setIsMyVocabBankOpen] = useState(false);
+  const [isAchievementsModalOpen, setIsAchievementsModalOpen] = useState(false);
+
+  const fourSkills = getFourSkillsCompetency(srsProgressMap);
+  const systemAchievements = evaluateUserAchievements({
+    profile,
+    srsProgressMap,
+    dailyHistory,
+  });
+  const unlockedBadgesCount = systemAchievements.filter((a) => a.isUnlocked).length;
+  const totalBadgesCount = systemAchievements.length;
+  const badgesProgressPercent = Math.round((unlockedBadgesCount / totalBadgesCount) * 100);
 
   const today = new Date().toISOString().split('T')[0];
   const todayProgress = dailyHistory[today] || {
@@ -52,7 +72,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     xpGained: 0,
   };
 
-  const dueWords = vocabularyList.filter((w) => isDueForReview(w.nextReviewDate) && (w.srsLevel > 0 || !!w.lastReviewedDate));
+  const dueWords = getDueReviewWords(vocabularyList);
   const masteredWords = vocabularyList.filter((w) => w.srsLevel >= 3);
   const learningWords = vocabularyList.filter((w) => w.srsLevel > 0 && w.srsLevel < 3);
   const newWords = vocabularyList.filter((w) => w.srsLevel === 0 && !w.lastReviewedDate);
@@ -302,15 +322,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         {/* Quick Performance Counter Badges */}
         <div className="mt-8 pt-6 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           
-          <div className="flex items-center gap-3.5 bg-slate-950/60 border border-slate-800/80 p-3.5 rounded-2xl">
-            <div className="w-11 h-11 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400 border border-emerald-500/30 shrink-0">
-              <RefreshCw className="w-5 h-5" />
-            </div>
+          {/* Nút Kích Hoạt Ôn Tập Từ Vựng - Interactive Card */}
+          <div 
+            onClick={() => setIsReviewModalOpen(true)}
+            className="group relative flex items-center justify-between bg-slate-950/80 hover:bg-slate-900 border border-slate-800/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition-all duration-200 hover:scale-[1.02] shadow-lg hover:shadow-emerald-500/10 select-none"
+            title="Nhấp để bắt đầu phiên ôn tập từ vựng"
+          >
             <div>
-              <div className="text-xs text-slate-400">Cần ôn hôm nay</div>
-              <div className="text-base font-black text-white">
+              <div className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
+                <span>Cần ôn hôm nay</span>
+                {dueWords.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />}
+              </div>
+              <div className="text-base font-black text-white mt-0.5">
                 <span className="text-emerald-400">{dueWords.length}</span> từ <span className="text-xs text-slate-500 font-normal">(Đã ôn: {todayProgress.wordsReviewed})</span>
               </div>
+            </div>
+
+            <div className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-500/10 group-hover:bg-emerald-500 text-emerald-400 group-hover:text-slate-950 rounded-xl text-xs font-black border border-emerald-500/20 group-hover:border-emerald-500 transition-all shrink-0">
+              <Play className="w-3 h-3 fill-current" />
+              <span className="hidden sm:inline">Ôn ngay</span>
             </div>
           </div>
 
@@ -641,12 +671,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <div className="flex justify-between text-xs font-bold">
                 <span className="text-cyan-400 flex items-center gap-1.5">
                   <Headphones className="w-3.5 h-3.5" />
-                  <span>🎧 Luyện Nghe (Listening)</span>
+                  <span>Luyện Nghe (Listening)</span>
                 </span>
-                <span className="text-slate-300 font-mono">Level B2 (75%)</span>
+                <span className="text-slate-300 font-mono">
+                  Level {fourSkills.listening.level} ({fourSkills.listening.score}%)
+                </span>
               </div>
               <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
-                <div className="bg-cyan-400 h-full rounded-full w-3/4 shadow-sm shadow-cyan-400/50" />
+                <div
+                  className="bg-cyan-400 h-full rounded-full shadow-sm shadow-cyan-400/50 transition-all duration-500"
+                  style={{ width: `${Math.max(4, fourSkills.listening.score)}%` }}
+                />
               </div>
             </div>
 
@@ -655,12 +690,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <div className="flex justify-between text-xs font-bold">
                 <span className="text-emerald-400 flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5" />
-                  <span>📖 Luyện Đọc (Reading)</span>
+                  <span>Luyện Đọc (Reading)</span>
                 </span>
-                <span className="text-slate-300 font-mono">Level C1 (88%)</span>
+                <span className="text-slate-300 font-mono">
+                  Level {fourSkills.reading.level} ({fourSkills.reading.score}%)
+                </span>
               </div>
               <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
-                <div className="bg-emerald-400 h-full rounded-full w-[88%] shadow-sm shadow-emerald-400/50" />
+                <div
+                  className="bg-emerald-400 h-full rounded-full shadow-sm shadow-emerald-400/50 transition-all duration-500"
+                  style={{ width: `${Math.max(4, fourSkills.reading.score)}%` }}
+                />
               </div>
             </div>
 
@@ -669,12 +709,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <div className="flex justify-between text-xs font-bold">
                 <span className="text-purple-400 flex items-center gap-1.5">
                   <Mic className="w-3.5 h-3.5" />
-                  <span>🗣️ Luyện Nói (Speaking)</span>
+                  <span>Luyện Nói (Speaking)</span>
                 </span>
-                <span className="text-slate-300 font-mono">Level B1 (60%)</span>
+                <span className="text-slate-300 font-mono">
+                  Level {fourSkills.speaking.level} ({fourSkills.speaking.score}%)
+                </span>
               </div>
               <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
-                <div className="bg-purple-400 h-full rounded-full w-3/5 shadow-sm shadow-purple-400/50" />
+                <div
+                  className="bg-purple-400 h-full rounded-full shadow-sm shadow-purple-400/50 transition-all duration-500"
+                  style={{ width: `${Math.max(4, fourSkills.speaking.score)}%` }}
+                />
               </div>
             </div>
 
@@ -683,19 +728,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <div className="flex justify-between text-xs font-bold">
                 <span className="text-amber-400 flex items-center gap-1.5">
                   <PenTool className="w-3.5 h-3.5" />
-                  <span>✍️ Luyện Viết (Writing)</span>
+                  <span>Luyện Viết (Writing)</span>
                 </span>
-                <span className="text-slate-300 font-mono">Level B2 (70%)</span>
+                <span className="text-slate-300 font-mono">
+                  Level {fourSkills.writing.level} ({fourSkills.writing.score}%)
+                </span>
               </div>
               <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
-                <div className="bg-amber-400 h-full rounded-full w-[70%] shadow-sm shadow-amber-400/50" />
+                <div
+                  className="bg-amber-400 h-full rounded-full shadow-sm shadow-amber-400/50 transition-all duration-500"
+                  style={{ width: `${Math.max(4, fourSkills.writing.score)}%` }}
+                />
               </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-850 flex items-center justify-between text-xs text-slate-400">
-              <span>Kho từ vựng tích lũy:</span>
-              <strong className="text-white font-mono">{vocabularyList.length} từ cốt lõi</strong>
-            </div>
+            {/* Kho từ vựng tích lũy Button */}
+            <button
+              onClick={() => setIsMyVocabBankOpen(true)}
+              className="w-full pt-3 border-t border-slate-850 flex items-center justify-between text-xs text-slate-400 hover:text-emerald-300 transition-colors group cursor-pointer text-left"
+              title="Nhấp để xem danh sách toàn bộ từ vựng đã tích lũy trong SRS"
+            >
+              <span className="flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Kho từ vựng tích lũy:</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <strong className="text-white group-hover:text-emerald-300 font-mono font-bold">
+                  {fourSkills.accumulatedCoreWords} từ cốt lõi
+                </strong>
+                <ArrowRight className="w-3.5 h-3.5 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+              </span>
+            </button>
           </div>
         </div>
 
@@ -757,237 +820,97 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <div>
                   <h3 className="text-base font-black text-white">Thành Tựu & Danh Hiệu</h3>
                   <span className="text-[11px] text-slate-400 font-mono">
-                    Đã mở khóa: <strong className="text-amber-400 font-bold">{
-                      [
-                        vocabularyList.length >= 500,
-                        profile.streak >= 7,
-                        true,
-                        true,
-                        false,
-                        profile.level >= 50,
-                        true,
-                        true
-                      ].filter(Boolean).length
-                    } / 8</strong> Huy hiệu
+                    Đã mở khóa: <strong className="text-amber-400 font-bold">{unlockedBadgesCount} / {totalBadgesCount}</strong> ({badgesProgressPercent}%)
                   </span>
                 </div>
               </div>
 
-              <div className="w-16 bg-slate-950 h-2 rounded-full overflow-hidden border border-slate-800">
+              <div className="w-20 bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
                 <div 
-                  className="bg-gradient-to-r from-amber-400 to-yellow-300 h-full rounded-full"
-                  style={{
-                    width: `${Math.round(([vocabularyList.length >= 500, profile.streak >= 7, true, true, false, profile.level >= 50, true, true].filter(Boolean).length / 8) * 100)}%`
-                  }}
+                  className="bg-gradient-to-r from-amber-400 to-yellow-300 h-full rounded-full transition-all duration-500"
+                  style={{ width: `${badgesProgressPercent}%` }}
                 />
               </div>
             </div>
 
             {/* Badges Grid (2 Columns) */}
             <div className="grid grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto no-scrollbar pr-0.5">
-              
-              {/* Badge 1: Vocab Titan */}
-              <div
-                title="Bậc Thầy Từ Vựng: Đã tích lũy ≥ 1.000 từ vựng cốt lõi (+200 XP)"
-                className="p-3 bg-gradient-to-br from-amber-500/15 via-slate-950 to-slate-900 border border-amber-500/40 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-amber-500/20"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">🌟</span>
-                  <span className="text-[9px] font-black bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
-                    Đã mở
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-amber-300 transition-colors line-clamp-1">
-                    Bậc Thầy Từ Vựng
-                  </h4>
-                  <span className="text-[10px] text-amber-400/90 block font-mono">
-                    Vocab Titan • +200 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 2: Streak Master */}
-              <div
-                title={`Ngọn Lửa Bất Diệt: Duy trì chuỗi học liên tục 7 ngày (Tiến độ: ${profile.streak}/7 ngày)`}
-                className={`p-3 rounded-2xl border flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer ${
-                  profile.streak >= 7
-                    ? 'bg-gradient-to-br from-orange-500/15 via-slate-950 to-slate-900 border-orange-500/40 shadow-sm'
-                    : 'bg-slate-950/80 border-slate-800/80 opacity-75'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">🔥</span>
-                  {profile.streak >= 7 ? (
-                    <span className="text-[9px] font-black bg-orange-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
-                      Đã mở
+              {systemAchievements.map((ach) => (
+                <div
+                  key={ach.id}
+                  onClick={() => setIsAchievementsModalOpen(true)}
+                  title={`${ach.title}: ${ach.description} (Thưởng: +${ach.xpReward} XP)`}
+                  className={`p-3 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer border ${
+                    ach.isUnlocked
+                      ? 'bg-gradient-to-br from-amber-500/15 via-slate-950 to-slate-900 border-amber-500/40 shadow-sm hover:shadow-amber-500/20'
+                      : 'bg-slate-950/80 border-slate-800/80 opacity-75 hover:opacity-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xl">{ach.icon}</span>
+                    {ach.isUnlocked ? (
+                      <span className="text-[9px] font-black bg-amber-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
+                        Đã mở
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5 font-mono">
+                        <Lock className="w-2.5 h-2.5" />
+                        <span>{ach.progress}/{ach.target}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className={`text-xs font-black line-clamp-1 transition-colors ${
+                      ach.isUnlocked ? 'text-white group-hover:text-amber-300' : 'text-slate-400 group-hover:text-slate-200'
+                    }`}>
+                      {ach.title}
+                    </h4>
+                    <span className={`text-[10px] block font-mono ${
+                      ach.isUnlocked ? 'text-amber-400/90' : 'text-slate-500'
+                    }`}>
+                      {ach.categoryName} • +{ach.xpReward} XP
                     </span>
-                  ) : (
-                    <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5">
-                      <Lock className="w-2.5 h-2.5" />
-                      <span>{profile.streak}/7</span>
-                    </span>
-                  )}
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-orange-300 transition-colors line-clamp-1">
-                    Ngọn Lửa Bất Diệt
-                  </h4>
-                  <span className="text-[10px] text-orange-400/90 block font-mono">
-                    Streak Master • +150 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 3: Native Accent */}
-              <div
-                title="Giọng Đọc Chuẩn Mỹ: Đạt điểm phát âm ≥ 90% trong bài Luyện Nói (+120 XP)"
-                className="p-3 bg-gradient-to-br from-purple-500/15 via-slate-950 to-slate-900 border border-purple-500/40 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-purple-500/20"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">🗣️</span>
-                  <span className="text-[9px] font-black bg-purple-400 text-white px-1.5 py-0.2 rounded-full uppercase">
-                    Đã mở
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-purple-300 transition-colors line-clamp-1">
-                    Giọng Đọc Chuẩn Mỹ
-                  </h4>
-                  <span className="text-[10px] text-purple-400/90 block font-mono">
-                    Native Accent • +120 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 4: Code & Report Master */}
-              <div
-                title="Cây Bút Chuyên Nghiệp: Hoàn thành bài viết đạt ≥ 95 điểm (+150 XP)"
-                className="p-3 bg-gradient-to-br from-cyan-500/15 via-slate-950 to-slate-900 border border-cyan-500/40 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-cyan-500/20"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">✍️</span>
-                  <span className="text-[9px] font-black bg-cyan-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
-                    Đã mở
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-cyan-300 transition-colors line-clamp-1">
-                    Cây Bút Chuyên Nghiệp
-                  </h4>
-                  <span className="text-[10px] text-cyan-400/90 block font-mono">
-                    Writing Master • +150 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 5: Mythic Hero */}
-              <div
-                title="Huyền Thoại Trở Lại: Đạt cấp độ Level 50+ (+500 XP)"
-                className={`p-3 rounded-2xl border flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer ${
-                  profile.level >= 50
-                    ? 'bg-gradient-to-br from-rose-500/15 via-slate-950 to-slate-900 border-rose-500/40 shadow-sm shadow-rose-500/20'
-                    : 'bg-slate-950/80 border-slate-800/80 opacity-75'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">👑</span>
-                  {profile.level >= 50 ? (
-                    <span className="text-[9px] font-black bg-rose-500 text-white px-1.5 py-0.2 rounded-full uppercase">
-                      Đã mở
-                    </span>
-                  ) : (
-                    <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5">
-                      <Lock className="w-2.5 h-2.5" />
-                      <span>Lv.50</span>
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-rose-300 transition-colors line-clamp-1">
-                    Huyền Thoại Mythic
-                  </h4>
-                  <span className="text-[10px] text-rose-400/90 block font-mono">
-                    Mythic Hero • +500 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 6: Speed Demon */}
-              <div
-                title="Tốc Độ Bàn Thờ: Vượt qua Đấu Trường Speed Match 100% không sai (+100 XP)"
-                className="p-3 bg-slate-950/80 border border-slate-800/80 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer opacity-75 hover:opacity-100"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">⚡</span>
-                  <span className="text-[9px] font-bold text-slate-500 flex items-center gap-0.5">
-                    <Lock className="w-2.5 h-2.5" />
-                    <span>Chưa mở</span>
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-slate-300 group-hover:text-amber-300 transition-colors line-clamp-1">
-                    Tốc Độ Bàn Thờ
-                  </h4>
-                  <span className="text-[10px] text-slate-500 block font-mono">
-                    Speed Demon • +100 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 7: Mistake Slayer */}
-              <div
-                title="Thợ Săn Bẫy Lỗi: Giải cứu thành công ≥ 10 từ trong Sổ Bẫy Lỗi (+180 XP)"
-                className="p-3 bg-gradient-to-br from-emerald-500/15 via-slate-950 to-slate-900 border border-emerald-500/40 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-emerald-500/20"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">🎯</span>
-                  <span className="text-[9px] font-black bg-emerald-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
-                    Đã mở
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-emerald-300 transition-colors line-clamp-1">
-                    Thợ Săn Bẫy Lỗi
-                  </h4>
-                  <span className="text-[10px] text-emerald-400/90 block font-mono">
-                    Mistake Slayer • +180 XP
-                  </span>
-                </div>
-              </div>
-
-              {/* Badge 8: Golden Ears */}
-              <div
-                title="Đôi Tai Vàng: Hoàn thành ≥ 5 bài Nghe đạt 100% trắc nghiệm (+140 XP)"
-                className="p-3 bg-gradient-to-br from-teal-500/15 via-slate-950 to-slate-900 border border-teal-500/40 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer shadow-sm hover:shadow-teal-500/20"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xl">🎧</span>
-                  <span className="text-[9px] font-black bg-teal-400 text-slate-950 px-1.5 py-0.2 rounded-full uppercase">
-                    Đã mở
-                  </span>
-                </div>
-                <div>
-                  <h4 className="text-xs font-black text-white group-hover:text-teal-300 transition-colors line-clamp-1">
-                    Đôi Tai Vàng
-                  </h4>
-                  <span className="text-[10px] text-teal-400/90 block font-mono">
-                    Golden Ears • +140 XP
-                  </span>
-                </div>
-              </div>
-
+              ))}
             </div>
           </div>
 
-          <div className="pt-2.5 border-t border-slate-800 text-center">
+          <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
             <span className="text-[11px] text-slate-400 font-semibold">
-              💡 Rê chuột vào từng huy hiệu để xem chi tiết & phần thưởng!
+              💡 Bấm vào để xem 12 danh hiệu
             </span>
+            <button
+              onClick={() => setIsAchievementsModalOpen(true)}
+              className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <span>Xem tất cả</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
 
       </div>
+
+      {/* Modal Ôn Tập Từ Vựng SRS Toàn Diện */}
+      <ReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        onNavigate={onNavigate}
+      />
+
+      {/* Modal Kho Từ Vựng Tích Lũy */}
+      <MyVocabBankModal
+        isOpen={isMyVocabBankOpen}
+        onClose={() => setIsMyVocabBankOpen(false)}
+        onNavigate={onNavigate}
+      />
+
+      {/* Modal Danh Hiệu & Thành Tựu Toàn Diện */}
+      <AchievementsModal
+        isOpen={isAchievementsModalOpen}
+        onClose={() => setIsAchievementsModalOpen(false)}
+      />
 
     </div>
   );

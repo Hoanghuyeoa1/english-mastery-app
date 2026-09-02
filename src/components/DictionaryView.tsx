@@ -52,7 +52,7 @@ export const DictionaryView: React.FC<DictionaryViewProps> = ({ onOpenAddWord })
   const { addCustomWord, vocabularyList, audioVoice, audioSpeed } = useAppStore();
 
   const [query, setQuery] = useState('');
-  const [searchTerm, setSearchTerm] = useState('resilience');
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [entry, setEntry] = useState<DictionaryEntryData | null>(null);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
@@ -257,7 +257,7 @@ export const DictionaryView: React.FC<DictionaryViewProps> = ({ onOpenAddWord })
             <div>
               <h2 className="text-xl sm:text-2xl font-black text-white">Siêu Từ Điển Nhanh (Full Dictionary Engine)</h2>
               <p className="text-xs text-slate-400">
-                Kho offline <strong className="text-emerald-400">{totalDictionaryCount}+ từ vựng</strong> • Tra cứu Prefix siêu tốc &lt; 5ms • Phát âm Web Speech API
+                Kho offline <strong className="text-emerald-400">{vocabularyList.length.toLocaleString()} từ vựng</strong> • Tra cứu Prefix siêu tốc &lt; 5ms • Phát âm Web Speech API
               </p>
             </div>
           </div>
@@ -362,6 +362,9 @@ export const DictionaryView: React.FC<DictionaryViewProps> = ({ onOpenAddWord })
       )}
 
       {/* Main Entry Card */}
+{!entry && !loading && (
+  <div className="p-8 text-center text-slate-400 italic">Nhập từ vựng để bắt đầu tra cứu nhanh</div>
+)}
       {loading ? (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center space-y-3 shadow-xl">
           <Sparkles className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />

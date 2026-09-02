@@ -29,6 +29,7 @@ import {
 import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
 import { speakWord } from '../services/speechService';
+import { recordSkillScore } from '../services/skillsCompetencyService';
 import { VOCAB_10000_BANK } from '../data/defaultVocab';
 import { 
   LISTENING_LESSONS, 
@@ -298,6 +299,10 @@ export const FourSkillsView: React.FC<FourSkillsViewProps> = ({ onNavigate }) =>
       }
     });
 
+    const totalQuestions = selectedListenLesson.questions.length || 1;
+    const listeningPct = Math.round((correctCount / totalQuestions) * 100);
+    recordSkillScore('listening', listeningPct);
+
     if (correctCount > 0) {
       gainXP(correctCount * 15);
       fireSuccessConfetti();
@@ -321,6 +326,10 @@ export const FourSkillsView: React.FC<FourSkillsViewProps> = ({ onNavigate }) =>
         correctCount++;
       }
     });
+
+    const totalQuestions = selectedReadLesson.questions.length || 1;
+    const readingPct = Math.round((correctCount / totalQuestions) * 100);
+    recordSkillScore('reading', readingPct);
 
     if (correctCount > 0) {
       gainXP(correctCount * 15);
@@ -462,6 +471,7 @@ export const FourSkillsView: React.FC<FourSkillsViewProps> = ({ onNavigate }) =>
       // Check average score
       const allScores = Object.values(speakingTurnScores).map((s) => s.accuracy);
       const avg = allScores.length > 0 ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : 80;
+      recordSkillScore('speaking', avg);
 
       if (avg >= 60 && !completedSpeakingIds.includes(selectedSpeakingPrompt.id)) {
         const nextCompleted = [...completedSpeakingIds, selectedSpeakingPrompt.id];
@@ -542,6 +552,7 @@ export const FourSkillsView: React.FC<FourSkillsViewProps> = ({ onNavigate }) =>
 
     gainXP(30);
     fireSuccessConfetti();
+    recordSkillScore('writing', calculatedScore);
 
     // Mark completed
     if (calculatedScore >= 70 && !completedWritingIds.includes(selectedWritingPrompt.id)) {

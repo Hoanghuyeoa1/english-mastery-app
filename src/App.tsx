@@ -18,9 +18,15 @@ import { AchievementsModal } from './components/AchievementsModal';
 import { DailySettingsModal } from './components/DailySettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ProfileModal } from './components/ProfileModal';
+import { AuthSyncModal } from './components/AuthSyncModal';
+import { ReviewModal } from './components/ReviewModal';
+import { MyVocabBankModal } from './components/MyVocabBankModal';
+import { AdminView } from './components/AdminView';
 import { useAppStore } from './store/useAppStore';
+import { initCloudSync } from './services/cloudSyncService';
+import { syncCloudVocabulariesToStore } from './services/adminVocabService';
 import type { ActiveTab } from './types';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, Cloud } from 'lucide-react';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -31,6 +37,9 @@ export function App() {
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isDailySettingsOpen, setIsDailySettingsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isAuthSyncOpen, setIsAuthSyncOpen] = useState(false);
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [isMyVocabBankOpen, setIsMyVocabBankOpen] = useState(false);
 
   const { checkAndUpdateStreak, checkDailyReset, profile, syncVocab5000 } = useAppStore();
 
@@ -43,7 +52,13 @@ export function App() {
     checkDailyReset();
     checkAndUpdateStreak();
     syncVocab5000();
-  }, [checkDailyReset, checkAndUpdateStreak, syncVocab5000]);
+    syncCloudVocabulariesToStore();
+    const cleanupSync = initCloudSync();
+    return () => {
+      cleanupSync();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-slate-950">
@@ -57,6 +72,9 @@ export function App() {
         onOpenAchievements={() => setIsAchievementsOpen(true)}
         onOpenAddWord={() => handleOpenAddWord('')}
         onOpenDailySettings={() => setIsDailySettingsOpen(true)}
+        onOpenAuthSync={() => setIsAuthSyncOpen(true)}
+        onOpenReviewModal={() => setIsReviewModalOpen(true)}
+        onOpenMyVocabBank={() => setIsMyVocabBankOpen(true)}
       />
 
       {/* Main Container */}
@@ -101,6 +119,13 @@ export function App() {
         )}
 
         {activeTab === 'translator' && <TranslatorView />}
+
+        {activeTab === 'admin' && (
+          <AdminView 
+            onNavigate={(tab) => setActiveTab(tab)} 
+            onOpenAuth={() => setIsAuthSyncOpen(true)} 
+          />
+        )}
       </main>
 
       {/* Footer */}
@@ -112,6 +137,14 @@ export function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsAuthSyncOpen(true)}
+              className="hover:text-emerald-400 transition-colors flex items-center gap-1 text-emerald-400/90 font-medium"
+            >
+              <Cloud className="w-3.5 h-3.5" />
+              <span>Cloud Sync (Supabase)</span>
+            </button>
+            <span>•</span>
             <button
               onClick={() => setIsBackupOpen(true)}
               className="hover:text-emerald-400 transition-colors flex items-center gap-1"
@@ -126,6 +159,11 @@ export function App() {
       </footer>
 
       {/* Modals */}
+      <AuthSyncModal
+        isOpen={isAuthSyncOpen}
+        onClose={() => setIsAuthSyncOpen(false)}
+      />
+
       <DailySettingsModal
         isOpen={isDailySettingsOpen}
         onClose={() => setIsDailySettingsOpen(false)}
@@ -163,6 +201,20 @@ export function App() {
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
         onOpenBackup={() => setIsBackupOpen(true)}
+      />
+
+      {/* Review Session Modal */}
+      <ReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        onNavigate={(tab) => setActiveTab(tab)}
+      />
+
+      {/* Kho Từ Vựng Tích Lũy Modal */}
+      <MyVocabBankModal
+        isOpen={isMyVocabBankOpen}
+        onClose={() => setIsMyVocabBankOpen(false)}
+        onNavigate={(tab) => setActiveTab(tab)}
       />
 
     </div>

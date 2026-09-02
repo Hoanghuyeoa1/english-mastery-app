@@ -14,8 +14,9 @@ import {
   ChevronsRight
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useIsAdmin } from '../utils/adminAuth';
 import { speakWord } from '../services/speechService';
-import { VocabTag } from '../types';
+import { VocabTag, CEFRLevel } from '../types';
 
 interface WordManagerProps {
   onOpenAddWord: () => void;
@@ -23,6 +24,8 @@ interface WordManagerProps {
 }
 
 type ManagerFilterTag = 'ALL' | 'FAVORITE' | VocabTag;
+type FilterLevel = 'ALL' | CEFRLevel;
+type FilterTopic = 'ALL' | 'Giao tiếp hàng ngày' | 'Công việc' | 'Công nghệ' | 'Du lịch' | 'Học thuật' | 'Cảm xúc';
 
 const ITEMS_PER_PAGE = 30;
 
@@ -35,13 +38,16 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
     audioSpeed, 
     toggleFavorite 
   } = useAppStore();
+  const isAdmin = useIsAdmin();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTag, setSelectedTag] = useState<ManagerFilterTag>('ALL');
+  const [selectedLevel, setSelectedLevel] = useState<FilterLevel>('ALL');
+  const [selectedTopic, setSelectedTopic] = useState<FilterTopic>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
-  // Lọc danh sách từ vựng theo từ khóa và Tag
+  // Lọc danh sách từ vựng theo từ khóa, Tag, Level CEFR và Topic
   const filteredWords = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     return vocabularyList.filter((word) => {
@@ -49,7 +55,9 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
         !term ||
         word.word.toLowerCase().includes(term) ||
         (word.meaning && word.meaning.toLowerCase().includes(term)) ||
-        (word.ipa && word.ipa.toLowerCase().includes(term));
+        (word.ipa && word.ipa.toLowerCase().includes(term)) ||
+        (word.level && word.level.toLowerCase().includes(term)) ||
+        (word.topic && word.topic.toLowerCase().includes(term));
 
       const matchTag = 
         selectedTag === 'ALL' 
@@ -58,14 +66,24 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
           ? !!word.isFavorite 
           : word.tag === selectedTag;
 
-      return matchSearch && matchTag;
+      const matchLevel =
+        selectedLevel === 'ALL'
+          ? true
+          : word.level === selectedLevel;
+
+      const matchTopic =
+        selectedTopic === 'ALL'
+          ? true
+          : word.topic === selectedTopic;
+
+      return matchSearch && matchTag && matchLevel && matchTopic;
     });
-  }, [vocabularyList, searchTerm, selectedTag]);
+  }, [vocabularyList, searchTerm, selectedTag, selectedLevel, selectedTopic]);
 
   // Reset về trang 1 khi lọc hoặc tìm kiếm
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedTag]);
+  }, [searchTerm, selectedTag, selectedLevel, selectedTopic]);
 
   // Tính toán Pagination
   const totalPages = Math.max(1, Math.ceil(filteredWords.length / ITEMS_PER_PAGE));
@@ -82,7 +100,18 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
     setTimeout(() => setSyncNotice(null), 3500);
   };
 
-  const tags: ManagerFilterTag[] = ['ALL', 'FAVORITE', 'Tech', 'IELTS', 'TOEIC', 'Business', 'Academic', 'Daily', 'Idioms'];
+  const tags: ManagerFilterTag[] = ['ALL', 'FAVORITE', 'Tech', 'IELTS', 'TOEIC', 'Business', 'Academic', 'Daily', 'Idioms', 'Travel', 'Emotions'];
+  const levels: FilterLevel[] = ['ALL', 'A1', 'A2', 'B1', 'B2', 'C1'];
+  const topics: FilterTopic[] = [
+    'ALL',
+    'Giao tiếp hàng ngày',
+    'Công việc',
+    'Công nghệ',
+    'Du lịch',
+    'Học thuật',
+    'Cảm xúc'
+  ];
+
   const favoriteCount = vocabularyList.filter((w) => w.isFavorite).length;
 
   // Tạo dải số trang hiển thị thông minh
@@ -109,38 +138,47 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
         <div>
           <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2.5">
             <BookOpen className="w-7 h-7 text-emerald-400" />
-            <span>Kho Từ Vựng Toàn Diện ({vocabularyList.length} từ)</span>
+            <span>Kho Từ Vựng Toàn Diện ({vocabularyList.length.toLocaleString()} từ)</span>
           </h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Siêu kho từ vựng chuẩn Oxford 5000, IELTS, TOEIC, Tech & Business • {favoriteCount} từ gắn sao ⭐
+            Kho từ vựng chuẩn Oxford 3000 / CEFR ({vocabularyList.length.toLocaleString()} từ), IELTS, TOEIC, Tech & Business • {favoriteCount.toLocaleString()} từ gắn sao ⭐
           </p>
         </div>
 
         <div className="flex items-center flex-wrap gap-2.5 w-full sm:w-auto">
           <button
             onClick={handleManualSync}
-            title="Đồng bộ nạp đầy đủ 10.000+ từ vựng cốt lõi"
+            title={`Đồng bộ nạp đầy đủ kho từ vựng (${vocabularyList.length.toLocaleString()} từ)`}
             className="flex items-center gap-1.5 px-3.5 py-3 bg-slate-800 hover:bg-slate-750 text-cyan-400 border border-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm whitespace-nowrap"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Nạp 10.000+ từ</span>
+            <span>Nạp Kho Từ Chuẩn</span>
           </button>
 
-          <button
-            onClick={onOpenBulkImport}
-            className="flex items-center gap-1.5 px-3.5 py-3 bg-slate-800 hover:bg-slate-750 text-emerald-400 border border-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm whitespace-nowrap"
-          >
-            <Layers className="w-4 h-4" />
-            <span>Nhập CSV</span>
-          </button>
+          {isAdmin ? (
+            <>
+              <button
+                onClick={onOpenBulkImport}
+                className="flex items-center gap-1.5 px-3.5 py-3 bg-slate-800 hover:bg-slate-750 text-emerald-400 border border-slate-700 font-bold rounded-2xl transition-all text-xs sm:text-sm whitespace-nowrap"
+              >
+                <Layers className="w-4 h-4" />
+                <span>Nhập CSV</span>
+              </button>
 
-          <button
-            onClick={onOpenAddWord}
-            className="flex items-center gap-1.5 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20 transition-all text-xs sm:text-sm whitespace-nowrap"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Thêm Từ Mới</span>
-          </button>
+              <button
+                onClick={onOpenAddWord}
+                className="flex items-center gap-1.5 px-4 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-lg shadow-emerald-500/20 transition-all text-xs sm:text-sm whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Thêm Từ Mới</span>
+              </button>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-slate-900/90 border border-slate-800 rounded-2xl text-xs text-slate-400 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span>Kho từ vựng chính thức (Chỉ đọc)</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -151,32 +189,92 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
         </div>
       )}
 
-      {/* Search & Tag Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm kiếm siêu tốc trong 10.000+ từ vựng theo từ, nghĩa, IPA, cấp độ..."
-            className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
-          />
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="w-4 h-4 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2" />
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Tìm kiếm siêu tốc trong kho từ vựng theo từ tiếng Anh, nghĩa tiếng Việt, IPA, cấp độ..."
+          className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-2xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-colors"
+        />
+      </div>
+
+      {/* Multi-tier Filters: CEFR Level & Topics & Tags */}
+      <div className="space-y-2.5 bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl">
+        {/* Tier 1: Cấp độ CEFR (A1 - C1) */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+            Cấp độ CEFR:
+          </span>
+          {levels.map((lvl) => {
+            const isSelected = selectedLevel === lvl;
+            const levelColor = 
+              lvl === 'A1' || lvl === 'A2'
+                ? 'text-emerald-400'
+                : lvl === 'B1' || lvl === 'B2'
+                ? 'text-sky-400'
+                : lvl === 'C1'
+                ? 'text-purple-400'
+                : 'text-slate-300';
+
+            return (
+              <button
+                key={lvl}
+                onClick={() => setSelectedLevel(lvl)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  isSelected
+                    ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-black'
+                    : `bg-slate-800/90 border border-slate-750 hover:bg-slate-750 ${levelColor}`
+                }`}
+              >
+                {lvl === 'ALL' ? 'Tất cả Level' : `Level ${lvl}`}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+        {/* Tier 2: Chủ đề chuẩn (Topic) */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-1">
+            Chủ đề:
+          </span>
+          {topics.map((top) => {
+            const isSelected = selectedTopic === top;
+            return (
+              <button
+                key={top}
+                onClick={() => setSelectedTopic(top)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all shrink-0 ${
+                  isSelected
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
+                    : 'bg-slate-800/90 border border-slate-750 text-slate-300 hover:text-white'
+                }`}
+              >
+                {top === 'ALL' ? 'Tất cả Chủ đề' : top}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tier 3: Danh mục Thẻ (Tags / Favorites) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-slate-800">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1">
+            Bộ lọc phụ:
+          </span>
           {tags.map((t) => (
             <button
               key={t}
               onClick={() => setSelectedTag(t)}
-              className={`px-3.5 py-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all flex items-center gap-1 shrink-0 ${
                 selectedTag === t
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-black'
-                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                  ? 'bg-amber-400 text-slate-950 font-black'
+                  : 'bg-slate-800/50 border border-slate-800 text-slate-400 hover:text-white'
               }`}
             >
-              {t === 'FAVORITE' && <Star className={`w-3.5 h-3.5 ${selectedTag === t ? 'fill-slate-950 text-slate-950' : 'text-amber-400 fill-amber-400'}`} />}
-              <span>{t === 'ALL' ? 'Tất cả' : t === 'FAVORITE' ? `Yêu thích (${favoriteCount})` : t}</span>
+              {t === 'FAVORITE' && <Star className={`w-3 h-3 ${selectedTag === t ? 'fill-slate-950 text-slate-950' : 'text-amber-400 fill-amber-400'}`} />}
+              <span>{t === 'ALL' ? 'Tất cả tag' : t === 'FAVORITE' ? `Yêu thích (${favoriteCount.toLocaleString()})` : t}</span>
             </button>
           ))}
         </div>
@@ -185,8 +283,10 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
       {/* Filter Status Bar */}
       <div className="flex items-center justify-between text-xs text-slate-400 px-2">
         <span>
-          Tìm thấy <strong className="text-emerald-400 font-bold">{filteredWords.length}</strong> từ vựng
-          {selectedTag !== 'ALL' && <span> trong danh mục <strong>{selectedTag}</strong></span>}
+          Tìm thấy <strong className="text-emerald-400 font-bold">{filteredWords.length.toLocaleString()}</strong> từ vựng
+          {selectedLevel !== 'ALL' && <span> • Cấp độ <strong className="text-white">{selectedLevel}</strong></span>}
+          {selectedTopic !== 'ALL' && <span> • Chủ đề <strong className="text-white">{selectedTopic}</strong></span>}
+          {selectedTag !== 'ALL' && <span> • Thẻ <strong className="text-white">{selectedTag}</strong></span>}
         </span>
         <span>
           Trang <strong className="text-white">{validCurrentPage}</strong> / {totalPages} (30 từ/trang)
@@ -210,6 +310,18 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
               ? `Cấp ${word.srsLevel}` 
               : 'Từ mới';
 
+          const levelBadgeColor =
+            word.level === 'A1' || word.level === 'A2'
+              ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+              : word.level === 'B1' || word.level === 'B2'
+              ? 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+              : word.level === 'C1' || word.level === 'C2'
+              ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+              : 'bg-slate-800 text-slate-300 border-slate-700';
+
+          const exampleEn = word.exampleEn || word.example || '';
+          const exampleVi = word.exampleVi || word.exampleMeaning || '';
+
           return (
             <div 
               key={word.id}
@@ -217,11 +329,22 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
             >
               <div className="space-y-2.5">
                 <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 bg-slate-800 text-teal-300 rounded-full border border-slate-700">
-                      {word.tag}
-                    </span>
-                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${srsBadgeColor}`}>
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    {/* CEFR Level Badge */}
+                    {word.level && (
+                      <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${levelBadgeColor}`}>
+                        {word.level}
+                      </span>
+                    )}
+
+                    {/* Topic Badge */}
+                    {word.topic && (
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 bg-cyan-950/60 text-cyan-300 rounded-full border border-cyan-800/60">
+                        {word.topic}
+                      </span>
+                    )}
+
+                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${srsBadgeColor}`}>
                       {srsText}
                     </span>
                   </div>
@@ -270,8 +393,10 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
                     )}
                   </h3>
                   <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs font-mono text-emerald-400">{word.ipa}</span>
-                    <span className="text-xs text-slate-500 italic">({word.partOfSpeech})</span>
+                    <span className="text-xs font-mono text-emerald-400">{word.ipa || word.phonetic}</span>
+                    {word.partOfSpeech && (
+                      <span className="text-xs text-slate-500 italic font-medium">({word.partOfSpeech})</span>
+                    )}
                   </div>
                 </div>
 
@@ -279,10 +404,12 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
                   {word.meaning}
                 </p>
 
-                <div className="bg-slate-850 p-3 rounded-2xl border border-slate-800/80 space-y-1">
-                  <p className="text-xs text-slate-300 italic">"{word.example}"</p>
-                  <p className="text-[11px] text-slate-500">{word.exampleMeaning}</p>
-                </div>
+                {(exampleEn || exampleVi) && (
+                  <div className="bg-slate-850 p-3 rounded-2xl border border-slate-800/80 space-y-1">
+                    {exampleEn && <p className="text-xs text-slate-300 italic">"{exampleEn}"</p>}
+                    {exampleVi && <p className="text-[11px] text-slate-400">{exampleVi}</p>}
+                  </div>
+                )}
               </div>
 
               {/* Footer SRS stats */}

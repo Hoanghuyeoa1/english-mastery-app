@@ -4,6 +4,7 @@ import { UserProfile, VocabWord, DailyProgress, SRSGrade, Achievement, VocabTag,
 import { calculateSM2 } from '../services/srsAlgorithm';
 import { VOCAB_10000_BANK } from '../data/defaultVocab';
 import { calculateLevelFromXp } from '../utils/userRank';
+import { scheduleCloudSync } from '../services/cloudSyncService';
 
 export interface SRSProgress {
   srsLevel: number;
@@ -11,6 +12,9 @@ export interface SRSProgress {
   interval: number;
   easeFactor: number;
   lastReviewedDate?: string;
+  firstLearnedAt?: string;
+  todayNewReviewedAt?: string;
+  todayPoolReviewedAt?: string;
   isFavorite?: boolean;
 }
 
@@ -115,6 +119,9 @@ function composeVocabularyList(
           interval: progress.interval ?? w.interval ?? 0,
           easeFactor: progress.easeFactor ?? w.easeFactor ?? 2.5,
           lastReviewedDate: progress.lastReviewedDate || w.lastReviewedDate,
+          firstLearnedAt: progress.firstLearnedAt || w.firstLearnedAt,
+          todayNewReviewedAt: progress.todayNewReviewedAt || w.todayNewReviewedAt,
+          todayPoolReviewedAt: progress.todayPoolReviewedAt || w.todayPoolReviewedAt,
           isFavorite: progress.isFavorite ?? w.isFavorite ?? false,
         });
       } else {
@@ -157,7 +164,11 @@ interface AppStoreState {
   checkDailyReset: () => void;
   setDailyNewWordsLimit: (limit: number) => void;
   addExtraNewWords: (count: number) => void;
-  processReview: (wordId: string, grade: SRSGrade) => void;
+  processReview: (
+    wordId: string, 
+    grade: SRSGrade, 
+    reviewMode?: 'due_today' | 'today_learned' | 'all_learned' | boolean
+  ) => void;
   recordMistake: (
     word: Partial<VocabWord> & { word: string; meaning?: string },
     source?: MistakeRecord['source']
@@ -179,6 +190,28 @@ interface AppStoreState {
   importBackupData: (jsonData: string) => { success: boolean; message: string };
   resetVocabularyProgress: () => void;
   resetToDefault: () => void;
+  mergeCloudData: (payload: {
+    cloudProfile: {
+      id: string;
+      display_name?: string;
+      level?: number;
+      xp?: number;
+      streak?: number;
+      updated_at?: string;
+    } | null;
+    cloudSrsList: Array<{
+      word_id: string;
+      repetition?: number;
+      interval?: number;
+      ease_factor?: number;
+      next_review_date?: string;
+    }>;
+    cloudDailyLogs: Array<{
+      date: string;
+      words_learned?: number;
+      xp_earned?: number;
+    }>;
+  }) => void;
 }
 
 // Storage wrapper với auto-migration & quota safety
@@ -292,6 +325,7 @@ export const useAppStore = create<AppStoreState>()(
             targetGoal,
           },
         }));
+        scheduleCloudSync(500);
       },
 
       setAudioVoice: (voice) => set({ audioVoice: voice }),
@@ -378,6 +412,7 @@ export const useAppStore = create<AppStoreState>()(
           } catch (e) {
             // ignore
           }
+          scheduleCloudSync(2000);
         }
       },
 
@@ -410,6 +445,7 @@ export const useAppStore = create<AppStoreState>()(
           set((state) => ({
             profile: { ...state.profile, streak: 1, lastActiveDate: today, lastStudyDate: today },
           }));
+          scheduleCloudSync(2000);
           return;
         }
 
@@ -421,10 +457,12 @@ export const useAppStore = create<AppStoreState>()(
           set((state) => ({
             profile: { ...state.profile, streak: streak + 1, lastActiveDate: today, lastStudyDate: today },
           }));
+          scheduleCloudSync(2000);
         } else if (diffDays > 1) {
           set((state) => ({
             profile: { ...state.profile, streak: 1, lastActiveDate: today, lastStudyDate: today },
           }));
+          scheduleCloudSync(2000);
         }
       },
 
@@ -472,6 +510,7 @@ export const useAppStore = create<AppStoreState>()(
         });
 
         get().checkAchievements();
+        scheduleCloudSync(1500);
         return { leveledUp, newLevel: finalLevel };
       },
 
@@ -490,20 +529,71 @@ export const useAppStore = create<AppStoreState>()(
         }));
       },
 
-      processReview: (wordId: string, grade: SRSGrade) => {
+      processReview: (
+        wordId: string, 
+        grade: SRSGrade, 
+        reviewMode?: 'due_today' | 'today_learned' | 'all_learned' | boolean
+      ) => {
         const state = get();
         const word = state.vocabularyList.find((v) => v.id === wordId);
         if (!word) return;
 
-        const wasNewWord = (word.srsLevel === 0 && !word.lastReviewedDate);
-        const sm2 = calculateSM2(grade, word.interval, word.srsLevel, word.easeFactor);
+        const isReviewSession = !!reviewMode;
+        const existingProgress = state.srsProgressMap[wordId];
+        const hasBeenLearnedBefore = (word.srsLevel && word.srsLevel > 0) || !!word.lastReviewedDate || !!word.firstLearnedAt || !!existingProgress;
+        const isActuallyNewWord = !isReviewSession && !hasBeenLearnedBefore;
+
+        const nowIso = new Date().toISOString();
+
+        // XÁC ĐỊNH firstLearnedAt (CHỈ GHI 1 LẦN DUY NHẤT, KHÔNG ĐÈ KHI ÔN):
+        let firstLearnedAt = word.firstLearnedAt || existingProgress?.firstLearnedAt;
+        if (!firstLearnedAt) {
+          if (isActuallyNewWord) {
+            firstLearnedAt = nowIso;
+          } else {
+            // Từ cũ nhưng chưa có trường firstLearnedAt -> lấy mốc quá khứ
+            firstLearnedAt = word.lastReviewedDate || existingProgress?.lastReviewedDate || '2026-08-01T00:00:00.000Z';
+          }
+        }
+
+        const sm2 = calculateSM2(grade, word.interval || 0, word.srsLevel || 0, word.easeFactor || 2.5);
         
+        // CÁC TRƯỜNG ĐÁNH DẤU CHO TỪNG CHẾ ĐỘ:
+        let todayNewReviewedAt = word.todayNewReviewedAt || existingProgress?.todayNewReviewedAt;
+        let todayPoolReviewedAt = word.todayPoolReviewedAt || existingProgress?.todayPoolReviewedAt;
+        let nextReviewDate = sm2.nextReviewDate;
+
+        if (reviewMode === 'today_learned') {
+          // Ôn ở Chế độ 2 (Từ mới học hôm nay):
+          // Khi bấm Khó (1), Tốt (2), hoặc Dễ (3) -> đánh dấu hoàn thành ôn củng cố hôm nay -> trừ khỏi Chế độ 2
+          if (grade >= 1) {
+            todayNewReviewedAt = nowIso;
+          }
+          nextReviewDate = sm2.nextReviewDate;
+        } else if (reviewMode === 'all_learned') {
+          // Ôn ở Chế độ 3 (Toàn bộ kho từ):
+          // Khi bấm Khó (1), Tốt (2), hoặc Dễ (3) -> đánh dấu hoàn thành luyện kho hôm nay -> trừ khỏi Chế độ 3
+          if (grade >= 1) {
+            todayPoolReviewedAt = nowIso;
+          }
+          // THEO YÊU CẦU CỦA USER: "Không làm giảm số lượng ở mục Đến hạn ôn hôm nay"
+          // Ta GIỮ NGUYÊN nextReviewDate của từ đó, không làm thay đổi trạng thái đến hạn của Chế độ 1!
+          nextReviewDate = word.nextReviewDate;
+        } else {
+          // Chế độ 1 ('due_today') hoặc học thông thường:
+          // SM-2 cập nhật nextReviewDate -> từ đó không còn đến hạn -> trừ khỏi Chế độ 1!
+          nextReviewDate = sm2.nextReviewDate;
+        }
+
         const newProgress: SRSProgress = {
           srsLevel: sm2.srsLevel,
-          nextReviewDate: sm2.nextReviewDate,
+          nextReviewDate,
           interval: sm2.interval,
           easeFactor: sm2.easeFactor,
-          lastReviewedDate: new Date().toISOString(),
+          firstLearnedAt,
+          lastReviewedDate: nowIso,
+          todayNewReviewedAt,
+          todayPoolReviewedAt,
           isFavorite: word.isFavorite || false,
         };
 
@@ -512,7 +602,7 @@ export const useAppStore = create<AppStoreState>()(
           ...newProgress,
         };
 
-        const today = new Date().toISOString().split('T')[0];
+        const today = nowIso.split('T')[0];
         const currentDaily = state.dailyHistory[today] || {
           date: today,
           wordsReviewed: 0,
@@ -540,8 +630,8 @@ export const useAppStore = create<AppStoreState>()(
             ...state.dailyHistory,
             [today]: {
               ...currentDaily,
-              wordsReviewed: wasNewWord ? currentDaily.wordsReviewed : currentDaily.wordsReviewed + 1,
-              newWordsLearned: wasNewWord ? currentDaily.newWordsLearned + 1 : currentDaily.newWordsLearned,
+              wordsReviewed: isActuallyNewWord ? currentDaily.wordsReviewed : currentDaily.wordsReviewed + 1,
+              newWordsLearned: isActuallyNewWord ? currentDaily.newWordsLearned + 1 : currentDaily.newWordsLearned,
             },
           },
         });
@@ -843,6 +933,10 @@ export const useAppStore = create<AppStoreState>()(
           profile: {
             ...DEFAULT_PROFILE,
             name: '',
+            level: 1,
+            xp: 0,
+            streak: 0,
+            equippedTitle: 'Tân thủ',
             isOnboarded: false,
           },
           userCustomWords: [],
@@ -851,6 +945,94 @@ export const useAppStore = create<AppStoreState>()(
           vocabularyList: composeVocabularyList({}, []),
           dailyHistory: {},
           achievements: INITIAL_ACHIEVEMENTS,
+        });
+      },
+
+      mergeCloudData: ({ cloudProfile, cloudSrsList, cloudDailyLogs }) => {
+        set((state) => {
+          let nextProfile = { ...state.profile };
+          if (cloudProfile) {
+            const mergedXp = Math.max(state.profile.xp || 0, cloudProfile.xp || 0);
+            const calculatedLevel = calculateLevelFromXp(mergedXp);
+            const mergedLevel = Math.max(
+              calculatedLevel,
+              cloudProfile.level || 1,
+              state.profile.level || 1
+            );
+            const mergedStreak = Math.max(state.profile.streak || 1, cloudProfile.streak || 1);
+            const mergedName = state.profile.name || cloudProfile.display_name || '';
+
+            nextProfile = {
+              ...nextProfile,
+              name: mergedName,
+              xp: mergedXp,
+              level: mergedLevel,
+              streak: mergedStreak,
+              isOnboarded: !!mergedName || nextProfile.isOnboarded,
+            };
+          }
+
+          // Merge SRS Progress
+          const nextSrsMap = { ...state.srsProgressMap };
+          if (Array.isArray(cloudSrsList)) {
+            for (const item of cloudSrsList) {
+              if (!item || !item.word_id) continue;
+              const existing = nextSrsMap[item.word_id];
+              const cloudRep = item.repetition ?? 0;
+              const existingRep = existing?.srsLevel ?? 0;
+
+              if (!existing || cloudRep >= existingRep) {
+                nextSrsMap[item.word_id] = {
+                  srsLevel: Math.max(cloudRep, existingRep),
+                  interval: item.interval ?? existing?.interval ?? 0,
+                  easeFactor: item.ease_factor ?? existing?.easeFactor ?? 2.5,
+                  nextReviewDate: item.next_review_date || existing?.nextReviewDate || new Date().toISOString(),
+                  lastReviewedDate: existing?.lastReviewedDate || new Date().toISOString(),
+                  isFavorite: existing?.isFavorite ?? false,
+                };
+              }
+            }
+          }
+
+          // Merge Daily History with safety validation (chống lỗi cộng dồn số lượng từ trong kho từ điển)
+          const nextDailyHistory = { ...state.dailyHistory };
+          if (Array.isArray(cloudDailyLogs)) {
+            for (const log of cloudDailyLogs) {
+              if (!log || !log.date) continue;
+              const existing = nextDailyHistory[log.date];
+              // Không cộng dồn lặp lại: words_learned trên cloud đã bao gồm cả newWords và wordsReviewed
+              const rawLearned = log.words_learned || 0;
+              const safeLearned = rawLearned > 100 ? 0 : Math.max(0, rawLearned);
+
+              if (!existing) {
+                nextDailyHistory[log.date] = {
+                  date: log.date,
+                  wordsReviewed: safeLearned,
+                  newWordsLearned: 0,
+                  quizzesCompleted: 0,
+                  pronunciationsMastered: 0,
+                  xpGained: Math.max(0, log.xp_earned || 0),
+                };
+              } else {
+                const localTotal = (existing.wordsReviewed || 0) + (existing.newWordsLearned || 0);
+                const wordsDelta = Math.max(0, safeLearned - localTotal);
+                nextDailyHistory[log.date] = {
+                  ...existing,
+                  wordsReviewed: (existing.wordsReviewed || 0) + wordsDelta,
+                  xpGained: Math.max(existing.xpGained || 0, log.xp_earned || 0),
+                };
+              }
+            }
+          }
+
+          const nextVocabList = composeVocabularyList(nextSrsMap, state.userCustomWords);
+
+          return {
+            profile: nextProfile,
+            srsProgressMap: nextSrsMap,
+            dailyHistory: nextDailyHistory,
+            vocabularyList: nextVocabList,
+          };
         });
       },
     }),
@@ -873,6 +1055,48 @@ export const useAppStore = create<AppStoreState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state) {
+          // Đối chiếu làm sạch dữ liệu dựa trên ground truth srsProgressMap
+          if (state.dailyHistory) {
+            const cleaned: Record<string, DailyProgress> = {};
+            const srsEntries = Object.values(state.srsProgressMap || {});
+            const realReviewsByDate: Record<string, number> = {};
+            for (const item of srsEntries) {
+              if (item.lastReviewedDate) {
+                const dStr = item.lastReviewedDate.split('T')[0];
+                realReviewsByDate[dStr] = (realReviewsByDate[dStr] || 0) + 1;
+              }
+            }
+
+            for (const [date, val] of Object.entries(state.dailyHistory)) {
+              if (!val) continue;
+              const realReviews = realReviewsByDate[date] || 0;
+              // Nếu giá trị lưu trữ vượt xa số từ thực tế có trong srsProgressMap, clamp về đúng số từ thực tế
+              const safeReviewed = (val.wordsReviewed || 0) > Math.max(10, realReviews * 2)
+                ? realReviews
+                : Math.max(0, val.wordsReviewed || 0);
+              const safeNew = (val.newWordsLearned || 0) > 50
+                ? Math.min(realReviews, 15)
+                : Math.max(0, val.newWordsLearned || 0);
+
+              cleaned[date] = {
+                ...val,
+                wordsReviewed: safeReviewed,
+                newWordsLearned: safeNew,
+                xpGained: Math.min(2000, Math.max(0, val.xpGained || 0)),
+              };
+            }
+            state.dailyHistory = cleaned;
+          }
+
+          // Đảm bảo mọi từ đã có trong srsProgressMap đều có firstLearnedAt lịch sử
+          if (state.srsProgressMap) {
+            for (const prog of Object.values(state.srsProgressMap)) {
+              if (prog && !prog.firstLearnedAt) {
+                prog.firstLearnedAt = prog.lastReviewedDate || '2026-08-01T00:00:00.000Z';
+              }
+            }
+          }
+
           // Khi nạp xong từ LocalStorage, đồng bộ ngay danh sách từ vựng RAM đầy đủ
           state.vocabularyList = composeVocabularyList(state.srsProgressMap, state.userCustomWords);
         }
