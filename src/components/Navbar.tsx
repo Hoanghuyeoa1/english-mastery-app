@@ -1,13 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Flame, 
   Star, 
   Heart, 
-  Volume2, 
-  ShieldCheck, 
   Award, 
+  Trophy,
   PlusCircle, 
-  Target,
   ChevronDown,
   LayoutDashboard,
   Layers,
@@ -22,10 +20,8 @@ import {
   ShieldAlert,
   Headphones,
   PenTool,
-  Cloud,
-  CloudCheck,
-  RefreshCw,
-  WifiOff,
+  LogIn,
+  User as UserIcon,
   RotateCcw,
   BookmarkCheck,
 } from 'lucide-react';
@@ -35,6 +31,7 @@ import { useIsAdmin } from '../utils/adminAuth';
 import { ActiveTab } from '../types';
 import { UserAvatar, UserRankBadge } from './UserProfileBadge';
 import { getUserRankInfo, getXpLevelProgress } from '../utils/userRank';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -77,8 +74,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenReviewModal,
   onOpenMyVocabBank,
 }) => {
-  const { profile, refillHearts, audioVoice, setAudioVoice, mistakeBank, setActiveFourSkill } = useAppStore();
-  const { user, status, isOnline } = useCloudSyncStore();
+  const { profile, refillHearts, mistakeBank, setActiveFourSkill } = useAppStore();
+  const { user } = useCloudSyncStore();
   const isAdmin = useIsAdmin();
 
   const unresolvedMistakeCount = Object.values(mistakeBank || {}).filter((m) => !m.resolved).length;
@@ -215,6 +212,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               level={profile.level}
               size="md"
               showLevelBadge={true}
+              equippedFrame={profile.equippedFrame}
             />
 
             <div>
@@ -287,55 +285,55 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
+            {/* PWA Install Button (A2HS) */}
+            <PWAInstallButton />
+
+            <button
+              onClick={() => setActiveTab('leaderboard')}
+              title="Bảng Xếp Hạng Anh Ngữ (Realtime Leaderboard)"
+              className={`p-2 border rounded-2xl transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                activeTab === 'leaderboard'
+                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-400'
+                  : 'bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-amber-400'
+              }`}
+            >
+              <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
+            </button>
+
             <button
               onClick={onOpenAchievements}
               title="Huy hiệu & Thành Tựu"
-              className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-amber-400 rounded-2xl transition-all"
+              className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-amber-400 rounded-2xl transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             >
               <Award className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
-            {/* Cloud Sync Status / Auth Button */}
+            {/* Authentication / Account Button */}
             <button
               onClick={onOpenAuthSync}
               title={
                 !user
-                  ? 'Đồng bộ đám mây (Supabase) - Lưu trữ đa thiết bị'
-                  : status === 'syncing'
-                  ? 'Đang đồng bộ dữ liệu với Cloud...'
-                  : !isOnline
-                  ? 'Đang offline (Đã lưu tại LocalStorage)'
-                  : 'Dữ liệu đã được lưu an toàn trên Cloud (Supabase)'
+                  ? 'Đăng nhập tài khoản'
+                  : `Tài khoản: ${user.displayName || user.email || 'Học viên'}`
               }
-              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs sm:text-sm font-bold border transition-all ${
+              aria-label={!user ? 'Đăng nhập tài khoản' : 'Quản lý tài khoản'}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-2xl text-xs sm:text-sm font-bold border transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                 !user
                   ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-400 hover:text-emerald-300 shadow-sm'
-                  : status === 'syncing'
-                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
-                  : !isOnline
-                  ? 'bg-slate-900 border-slate-800 text-slate-400'
                   : 'bg-teal-500/10 hover:bg-teal-500/20 border-teal-500/30 text-teal-300'
               }`}
             >
               {!user ? (
                 <>
-                  <Cloud className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-400" />
-                  <span className="hidden md:inline">Sync Cloud</span>
-                </>
-              ) : status === 'syncing' ? (
-                <>
-                  <RefreshCw className="w-4 h-4 text-amber-400 animate-spin" />
-                  <span className="hidden md:inline">Đang lưu...</span>
-                </>
-              ) : !isOnline ? (
-                <>
-                  <WifiOff className="w-4 h-4 text-slate-400" />
-                  <span className="hidden md:inline">Offline</span>
+                  <LogIn className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-emerald-400" />
+                  <span className="hidden md:inline">Đăng nhập</span>
                 </>
               ) : (
                 <>
-                  <CloudCheck className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-teal-400" />
-                  <span className="hidden md:inline">Đã lưu</span>
+                  <UserIcon className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-teal-400" />
+                  <span className="hidden md:inline max-w-[120px] truncate">
+                    {user.displayName || user.email?.split('@')[0] || 'Tài khoản'}
+                  </span>
                 </>
               )}
             </button>
@@ -352,7 +350,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               setActiveTab('dashboard');
               setOpenDropdown(null);
             }}
-            className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
               activeTab === 'dashboard'
                 ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
                 : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
@@ -375,7 +373,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <button
                   onClick={() => setOpenDropdown(isOpen ? null : group.id)}
-                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 border active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                     isGroupActive
                       ? 'bg-emerald-500/15 border-emerald-400/60 text-emerald-300 shadow-sm'
                       : isOpen
@@ -454,7 +452,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <button
                   onClick={() => setOpenDropdown(isOpen ? null : group.id)}
-                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 border active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
                     isGroupActive
                       ? 'bg-amber-500/15 border-amber-400/60 text-amber-300 shadow-sm'
                       : isOpen
@@ -519,7 +517,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 setActiveTab('four_skills');
                 setOpenDropdown(openDropdown === 'skills_group' ? null : 'skills_group');
               }}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 border active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
                 activeTab === 'four_skills'
                   ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-md shadow-cyan-500/20 font-black'
                   : openDropdown === 'skills_group'
@@ -540,7 +538,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setActiveFourSkill('listening');
                     setOpenDropdown(null);
                   }}
-                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                  className="w-full p-2.5 rounded-xl text-left transition-all duration-150 flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
                 >
                   <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-cyan-400 group-hover:scale-110 transition-transform">
                     <Headphones className="w-4 h-4" />
@@ -561,7 +559,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setActiveFourSkill('reading');
                     setOpenDropdown(null);
                   }}
-                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                  className="w-full p-2.5 rounded-xl text-left transition-all duration-150 flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                 >
                   <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-emerald-400 group-hover:scale-110 transition-transform">
                     <BookOpen className="w-4 h-4" />
@@ -582,7 +580,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setActiveFourSkill('speaking');
                     setOpenDropdown(null);
                   }}
-                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                  className="w-full p-2.5 rounded-xl text-left transition-all duration-150 flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                 >
                   <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-purple-400 group-hover:scale-110 transition-transform">
                     <Mic className="w-4 h-4" />
@@ -603,7 +601,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setActiveFourSkill('writing');
                     setOpenDropdown(null);
                   }}
-                  className="w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group"
+                  className="w-full p-2.5 rounded-xl text-left transition-all duration-150 flex items-start gap-3 hover:bg-slate-800/80 text-slate-200 group active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                 >
                   <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800 shrink-0 mt-0.5 text-amber-400 group-hover:scale-110 transition-transform">
                     <PenTool className="w-4 h-4" />
@@ -634,7 +632,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <button
                   onClick={() => setOpenDropdown(isOpen ? null : group.id)}
-                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+                  className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 border active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
                     isGroupActive
                       ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-300 shadow-sm'
                       : isOpen
@@ -662,7 +660,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                             }
                             setOpenDropdown(null);
                           }}
-                          className={`w-full p-2.5 rounded-xl text-left transition-all flex items-start gap-3 ${
+                          className={`w-full p-2.5 rounded-xl text-left transition-all duration-150 flex items-start gap-3 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${
                             isItemActive
                               ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
                               : 'hover:bg-slate-800/80 text-slate-200'
@@ -688,14 +686,30 @@ export const Navbar: React.FC<NavbarProps> = ({
             );
           })}
 
-          {/* Admin Tab - Chỉ hiển thị cho Quản trị viên hoang2003eoe@gmail.com */}
+          {/* Bảng Xếp Hạng Tab */}
+          <button
+            onClick={() => {
+              setActiveTab('leaderboard');
+              setOpenDropdown(null);
+            }}
+            className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 border active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+              activeTab === 'leaderboard'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/25 border-amber-400 font-black'
+                : 'border-transparent text-slate-300 hover:text-amber-300 hover:bg-slate-900/80'
+            }`}
+          >
+            <Trophy className={`w-4 h-4 ${activeTab === 'leaderboard' ? 'text-slate-950' : 'text-amber-400'}`} />
+            <span>Xếp Hạng 🏆</span>
+          </button>
+
+          {/* Admin Tab - Chỉ hiển thị cho Quản trị viên (RBAC) */}
           {isAdmin && (
             <button
               onClick={() => {
                 setActiveTab('admin');
                 setOpenDropdown(null);
               }}
-              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-black whitespace-nowrap transition-all flex items-center gap-1.5 border ${
+              className={`px-3 py-2 rounded-xl text-xs sm:text-sm font-black whitespace-nowrap transition-all duration-150 flex items-center gap-1.5 border active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 ${
                 activeTab === 'admin'
                   ? 'bg-rose-500 text-white shadow-md shadow-rose-500/25 border-rose-400'
                   : 'bg-rose-500/10 border-rose-500/30 text-rose-300 hover:bg-rose-500/20 hover:text-white'

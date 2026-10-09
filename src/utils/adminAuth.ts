@@ -1,21 +1,22 @@
 import { useCloudSyncStore } from '../services/cloudSyncService';
 
-export const ADMIN_EMAILS = [
-  'hoang2003eoe@gmail.com',
-];
-
 /**
- * Check whether a given email address belongs to an Admin
+ * Kiểm tra xem người dùng có mang vai trò ADMIN hay không dựa trên RBAC claims từ backend.
+ * Hoàn toàn không phụ thuộc vào email hardcode.
  */
-export function isUserAdmin(email?: string | null): boolean {
-  if (!email) return false;
-  return ADMIN_EMAILS.includes(email.trim().toLowerCase());
+export function isUserAdmin(target?: { roles?: string[] | null } | string[] | null): boolean {
+  if (!target) return false;
+
+  const roles = Array.isArray(target) ? target : target.roles;
+  if (!roles || !Array.isArray(roles)) return false;
+
+  return roles.some((role) => typeof role === 'string' && role.trim().toUpperCase() === 'ADMIN');
 }
 
 /**
- * Reactive React hook to check whether the currently logged-in Supabase user is an Admin
+ * Reactive React hook kiểm tra quyền ADMIN của người dùng hiện tại từ Zustand store
  */
 export function useIsAdmin(): boolean {
-  const userEmail = useCloudSyncStore((state) => state.userEmail);
-  return isUserAdmin(userEmail);
+  const user = useCloudSyncStore((state) => state.user);
+  return isUserAdmin(user);
 }

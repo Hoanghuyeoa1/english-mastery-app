@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
   AlertTriangle, 
   CheckCircle2, 
@@ -14,21 +14,42 @@ import {
   ShieldAlert,
   Flame,
   Check,
-  Filter,
-  Layers,
   ArrowRight,
-  TrendingDown
+  ArrowUpDown,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { useAppStore } from '../store/useAppStore';
 import { speakWord } from '../services/speechService';
-import { MistakeRecord, ActiveTab } from '../types';
+import { MistakeRecord, ActiveTab, MistakeType } from '../types';
+import { useAppStore } from '../store/useAppStore';
 import { VoicePronunciationModal } from './VoicePronunciationModal';
+import { 
+  routeMistakeToModule, 
+  getModuleNavigationTarget 
+} from '../services/adaptivePracticeRouter';
+import {
+  toAdaptiveProfile,
+  calculateAdaptiveScore,
+} from '../services/adaptiveMistakeService';
 
 interface MistakeBankViewProps {
   onNavigate?: (tab: ActiveTab) => void;
 }
 
-type FilterStatus = 'ALL' | 'UNRESOLVED' | 'RESOLVED';
+export type MistakeFilterStatus = 'ALL' | 'UNRESOLVED' | 'RESOLVED' | 'RECURRING' | 'HIGH_PRIORITY';
+export type MistakeFilterType = 'ALL' | MistakeType;
+export type MistakeSortOption = 'URGENT' | 'MOST_MISTAKES' | 'RECENT' | 'OLDEST';
+
+export const TYPE_CONFIG: Record<MistakeType, { label: string; color: string }> = {
+  meaning: { label: 'Ý nghĩa', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+  spelling: { label: 'Chính tả', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
+  listening: { label: 'Nghe hiểu', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30' },
+  pronunciation: { label: 'Phát âm', color: 'text-teal-400 bg-teal-500/10 border-teal-500/30' },
+  collocation: { label: 'Cụm từ', color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
+  grammar: { label: 'Ngữ pháp', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30' },
+  reading: { label: 'Đọc hiểu', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
+  writing: { label: 'Viết luận', color: 'text-rose-400 bg-rose-500/10 border-rose-500/30' },
+  other: { label: 'Khác', color: 'text-slate-400 bg-slate-500/10 border-slate-500/30' },
+};
 
 export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) => {
   const { 
@@ -38,10 +59,13 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
     clearAllMistakes,
     recordMistakeCorrect,
     audioVoice, 
-    audioSpeed 
+    audioSpeed,
+    startAdaptivePractice,
   } = useAppStore();
 
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('UNRESOLVED');
+  const [filterStatus, setFilterStatus] = useState<MistakeFilterStatus>('UNRESOLVED');
+  const [filterType, setFilterType] = useState<MistakeFilterType>('ALL');
+  const [sortBy, setSortBy] = useState<MistakeSortOption>('URGENT');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWordForVoice, setSelectedWordForVoice] = useState<MistakeRecord | null>(null);
   const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false);
@@ -58,7 +82,11 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
     return mistakeList.filter((m) => m.resolved);
   }, [mistakeList]);
 
-  // Lọc theo từ khóa tìm kiếm và trạng thái
+  const recurringList = useMemo(() => {
+    return mistakeList.filter((m) => Boolean((m.reopenCount && m.reopenCount > 0) || (m.mistakeCount >= 4 && !m.resolved)));
+  }, [mistakeList]);
+
+  // Lọc theo từ khóa tìm kiếm, trạng thái, và loại lỗi + Sắp xếp theo derived service
   const filteredList = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     return mistakeList
@@ -70,18 +98,51 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
 
         if (!matchesSearch) return false;
 
-        if (filterStatus === 'UNRESOLVED') return !item.resolved;
-        if (filterStatus === 'RESOLVED') return item.resolved;
+        // 1. Lọc theo trạng thái
+        if (filterStatus === 'UNRESOLVED' && item.resolved) return false;
+        if (filterStatus === 'RESOLVED' && !item.resolved) return false;
+        if (filterStatus === 'RECURRING') {
+          const isRecurring = Boolean((item.reopenCount && item.reopenCount > 0) || (item.mistakeCount >= 4 && !item.resolved));
+          if (!isRecurring) return false;
+        }
+        if (filterStatus === 'HIGH_PRIORITY') {
+          const profile = toAdaptiveProfile(item);
+          const score = calculateAdaptiveScore(profile);
+          if (score < 60 && item.mistakeCount < 4) return false;
+        }
+
+        // 2. Lọc theo loại lỗi (Mistake Type)
+        if (filterType !== 'ALL') {
+          const itemType = item.primaryType || 'meaning';
+          const hasCount = item.typeCounts && (item.typeCounts[filterType] || 0) > 0;
+          if (itemType !== filterType && !hasCount) return false;
+        }
+
         return true;
       })
       .sort((a, b) => {
-        // Sắp xếp từ sai nhiều nhất lên trước
-        if (b.mistakeCount !== a.mistakeCount) {
-          return b.mistakeCount - a.mistakeCount;
+        switch (sortBy) {
+          case 'URGENT': {
+            const scoreB = calculateAdaptiveScore(toAdaptiveProfile(b));
+            const scoreA = calculateAdaptiveScore(toAdaptiveProfile(a));
+            if (scoreB !== scoreA) return scoreB - scoreA;
+            return b.mistakeCount - a.mistakeCount;
+          }
+          case 'MOST_MISTAKES': {
+            if (b.mistakeCount !== a.mistakeCount) return b.mistakeCount - a.mistakeCount;
+            return new Date(b.lastMistakeAt).getTime() - new Date(a.lastMistakeAt).getTime();
+          }
+          case 'RECENT': {
+            return new Date(b.lastMistakeAt).getTime() - new Date(a.lastMistakeAt).getTime();
+          }
+          case 'OLDEST': {
+            return new Date(a.lastMistakeAt).getTime() - new Date(b.lastMistakeAt).getTime();
+          }
+          default:
+            return b.mistakeCount - a.mistakeCount;
         }
-        return new Date(b.lastMistakeAt).getTime() - new Date(a.lastMistakeAt).getTime();
       });
-  }, [mistakeList, searchTerm, filterStatus]);
+  }, [mistakeList, searchTerm, filterStatus, filterType, sortBy]);
 
   const handlePlayAudio = (text: string) => {
     speakWord(text, audioVoice, audioSpeed);
@@ -101,6 +162,12 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
         return { label: 'Classic Quiz', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' };
       case 'pronunciation':
         return { label: 'Phát Âm Mic', color: 'text-teal-400 bg-teal-500/10 border-teal-500/30' };
+      case 'listening':
+        return { label: 'Listening Lab', color: 'text-sky-400 bg-sky-500/10 border-sky-500/30' };
+      case 'reading':
+        return { label: 'Reading Lab', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' };
+      case 'writing':
+        return { label: 'Writing Studio', color: 'text-violet-400 bg-violet-500/10 border-violet-500/30' };
       default:
         return { label: 'Tự ghi nhận', color: 'text-slate-400 bg-slate-500/10 border-slate-500/30' };
     }
@@ -131,10 +198,11 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
 
           {/* Quick Action Group */}
           <div className="flex flex-wrap sm:flex-col gap-2 shrink-0">
+
             {onNavigate && (
               <button
                 onClick={() => onNavigate('flashcards')}
-                className="flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-rose-500 to-amber-500 hover:from-rose-400 hover:to-amber-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-xl shadow-rose-500/20 transition-all transform hover:scale-105"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-bold rounded-2xl text-xs transition-all"
               >
                 <Brain className="w-4 h-4" />
                 <span>Ôn Thẻ SRS Bộ Từ Sai</span>
@@ -187,26 +255,33 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
 
       {/* 2. Filter Bar & Search */}
       <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        {/* Row 1: Status Tabs & Sort & Search */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           
           {/* Status Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 lg:pb-0">
             {[
               { id: 'UNRESOLVED', label: `🚨 Cần khắc phục (${unresolvedList.length})` },
               { id: 'ALL', label: `📚 Tất cả (${mistakeList.length})` },
+              { id: 'RECURRING', label: `🔁 Tái diễn (${recurringList.length})` },
+              { id: 'HIGH_PRIORITY', label: '🔥 Điểm ưu tiên cao' },
               { id: 'RESOLVED', label: `🎉 Đã sửa xong (${resolvedList.length})` },
             ].map((tab) => {
               const isSelected = filterStatus === tab.id;
               return (
                 <button
                   key={tab.id}
-                  onClick={() => setFilterStatus(tab.id as FilterStatus)}
-                  className={`px-4 py-2 rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
+                  onClick={() => setFilterStatus(tab.id as MistakeFilterStatus)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
                     isSelected
                       ? tab.id === 'UNRESOLVED'
                         ? 'bg-rose-500/20 border-rose-500/60 text-rose-300 shadow-md ring-1 ring-rose-500/30'
                         : tab.id === 'RESOLVED'
                         ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300 shadow-md ring-1 ring-emerald-500/30'
+                        : tab.id === 'RECURRING'
+                        ? 'bg-purple-500/20 border-purple-500/60 text-purple-300 shadow-md ring-1 ring-purple-500/30'
+                        : tab.id === 'HIGH_PRIORITY'
+                        ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 shadow-md ring-1 ring-amber-500/30'
                         : 'bg-slate-800 border-slate-700 text-white shadow-md'
                       : 'bg-slate-850 hover:bg-slate-800 border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
@@ -217,17 +292,70 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
             })}
           </div>
 
-          {/* Search Box */}
-          <div className="relative w-full md:w-72">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Tìm từ vựng bẫy lỗi..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-2xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/60 transition-colors"
-            />
+          {/* Sort Selector & Search Box */}
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Sort Dropdown */}
+            <div className="relative min-w-[170px]">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as MistakeSortOption)}
+                aria-label="Sắp xếp danh sách bẫy lỗi"
+                className="w-full bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl pl-8 pr-3 py-2 font-medium focus:outline-none focus:border-rose-500/60 transition-colors cursor-pointer"
+              >
+                <option value="URGENT">Khẩn cấp nhất (Priority)</option>
+                <option value="MOST_MISTAKES">Sai nhiều nhất</option>
+                <option value="RECENT">Gần đây nhất</option>
+                <option value="OLDEST">Cũ nhất chưa sửa</option>
+              </select>
+            </div>
+
+            {/* Search Box */}
+            <div className="relative w-full sm:w-60">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Tìm từ vựng..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/60 transition-colors"
+              />
+            </div>
           </div>
+        </div>
+
+        {/* Row 2: Type Filter Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-slate-850">
+          <span className="text-[11px] font-bold text-slate-400 shrink-0 flex items-center gap-1 mr-1">
+            <SlidersHorizontal className="w-3 h-3 text-slate-400" />
+            <span>Loại lỗi:</span>
+          </span>
+          <button
+            onClick={() => setFilterType('ALL')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition-all ${
+              filterType === 'ALL'
+                ? 'bg-rose-500/20 text-rose-300 border-rose-500/50'
+                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-300'
+            }`}
+          >
+            Tất cả
+          </button>
+          {(Object.entries(TYPE_CONFIG) as [MistakeType, { label: string; color: string }][]).map(([typeKey, cfg]) => {
+            const isSelected = filterType === typeKey;
+            return (
+              <button
+                key={typeKey}
+                onClick={() => setFilterType(typeKey)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border transition-all ${
+                  isSelected
+                    ? `${cfg.color} ring-1 ring-current`
+                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-300'
+                }`}
+              >
+                {cfg.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Clean-up Actions */}
@@ -297,6 +425,11 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
           {filteredList.map((item) => {
             const sourceInfo = getSourceLabel(item.source);
             const isResolved = !!item.resolved;
+            const isReopened = !isResolved && (item.reopenCount ?? 0) > 0;
+            const rec = routeMistakeToModule(item);
+            const navTarget = getModuleNavigationTarget(rec.recommendedModule);
+            const primaryType: MistakeType = item.primaryType || rec.mistakeType || 'meaning';
+            const primaryCfg = TYPE_CONFIG[primaryType] || TYPE_CONFIG.meaning;
 
             return (
               <motion.div
@@ -324,6 +457,28 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
                           {item.ipa}
                         </span>
                       )}
+
+                      {/* Status Badge */}
+                      {isResolved ? (
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                          <span>Đã khắc phục</span>
+                        </span>
+                      ) : isReopened ? (
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+                          <RotateCcw className="w-3 h-3 text-rose-400" />
+                          <span>Tái diễn ({item.reopenCount} lần)</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                          Cần khắc phục
+                        </span>
+                      )}
+
+                      {/* Primary Weakness Badge */}
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${primaryCfg.color}`}>
+                        Điểm yếu: {primaryCfg.label}
+                      </span>
                     </div>
 
                     <p className="text-sm font-semibold text-slate-200">
@@ -363,6 +518,79 @@ export const MistakeBankView: React.FC<MistakeBankViewProps> = ({ onNavigate }) 
                   <p className="text-xs text-slate-400 italic bg-slate-950/60 p-3 rounded-2xl border border-slate-850">
                     "{item.example}"
                   </p>
+                )}
+
+                {/* Multi-type chips if multiple types recorded */}
+                {item.typeCounts && Object.keys(item.typeCounts).length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Tần suất lỗi:</span>
+                    {Object.entries(item.typeCounts)
+                      .filter(([, count]) => (count as number) > 0)
+                      .map(([typeKey, count]) => {
+                        const typeCfg = TYPE_CONFIG[typeKey as MistakeType] || { label: typeKey, color: 'text-slate-400 bg-slate-500/10 border-slate-500/30' };
+                        return (
+                          <span
+                            key={typeKey}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${typeCfg.color}`}
+                          >
+                            {typeCfg.label}: {count}
+                          </span>
+                        );
+                      })}
+                  </div>
+                )}
+
+                {/* Adaptive Practice Recommendation Banner */}
+                {!isResolved && (
+                  <div className="p-3 rounded-2xl bg-slate-950/70 border border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-amber-400">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span className="truncate">Đề xuất: {navTarget.description.split('(')[0].trim()}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 line-clamp-1">{rec.reason}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          startAdaptivePractice({
+                            module: rec.recommendedModule,
+                            itemIds: [item.id || item.word],
+                            mistakeType: rec.mistakeType,
+                          });
+                          onNavigate?.(navTarget.tab);
+                        }}
+                        className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black rounded-xl text-xs shrink-0 flex items-center gap-1 shadow-md shadow-amber-500/20 transition-all hover:scale-105"
+                      >
+                        <span>Luyện theo điểm yếu</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    {rec.secondaryModule && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-t border-slate-850 pt-1.5 flex-wrap">
+                        <span>Module thay thế:</span>
+                        {(() => {
+                          const altTarget = getModuleNavigationTarget(rec.secondaryModule);
+                          return (
+                            <button
+                              onClick={() => {
+                                startAdaptivePractice({
+                                  module: rec.secondaryModule!,
+                                  itemIds: [item.id || item.word],
+                                  mistakeType: rec.mistakeType,
+                                });
+                                onNavigate?.(altTarget.tab);
+                              }}
+                              className="px-2 py-0.5 rounded bg-slate-850 hover:bg-slate-800 text-slate-300 hover:text-white transition-colors"
+                            >
+                              {altTarget.description.split('(')[0].trim()}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {/* Card Bottom: Progress & Stats */}

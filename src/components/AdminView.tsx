@@ -20,7 +20,7 @@ import {
   AlertTriangle,
   RotateCcw,
 } from 'lucide-react';
-import { useIsAdmin, ADMIN_EMAILS } from '../utils/adminAuth';
+import { useIsAdmin } from '../utils/adminAuth';
 import { useCloudSyncStore } from '../services/cloudSyncService';
 import { useAppStore } from '../store/useAppStore';
 import {
@@ -158,7 +158,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
     } else {
       setFeedback({
         type: 'success',
-        message: `Đã lưu thành công từ "${newWord.trim()}" vào bảng vocabularies trên Supabase! Tất cả học viên đã có thể tải về học.`,
+        message: `Đã lưu thành công từ "${newWord.trim()}" vào kho từ vựng hệ thống! Tất cả học viên đã có thể tải về học.`,
       });
       // Reset form
       setNewWord('');
@@ -207,7 +207,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
 
   // Handle Delete
   const handleDeleteItem = async (id: string, word: string) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa từ vựng "${word}" khỏi bảng vocabularies trên Supabase?`)) {
+    if (!window.confirm(`Bạn có chắc muốn xóa từ vựng "${word}" khỏi kho từ vựng hệ thống?`)) {
       return;
     }
 
@@ -293,23 +293,14 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
 
   const displayProfiles = useMemo(() => {
     let list = [...profiles];
-    const adminEmail = ADMIN_EMAILS[0];
 
-    // Đảm bảo tài khoản Admin hoang2003eoe@gmail.com luôn có mặt trong danh sách
-    const hasAdminInList = list.some(
-      (p) =>
-        (p.display_name && p.display_name.toLowerCase().includes(adminEmail.toLowerCase())) ||
-        (userEmail && p.display_name && p.display_name.toLowerCase().includes(userEmail.toLowerCase())) ||
-        (currentUserId && p.id === currentUserId)
-    );
-
-    if (!hasAdminInList) {
+    if (currentUserId && !list.some((p) => p.id === currentUserId)) {
       list.unshift({
-        id: currentUserId || 'admin_hoang2003eoe',
-        display_name: userEmail ? `${userEmail} (Admin)` : `hoang2003eoe@gmail.com (Admin)`,
+        id: currentUserId,
+        display_name: userEmail ? `${userEmail} (Admin)` : 'Current Admin',
         level: useAppStore.getState().profile.level || 1,
         xp: useAppStore.getState().profile.xp || 0,
-        streak: useAppStore.getState().profile.streak || 1,
+        streak: useAppStore.getState().profile.streak ?? 0,
         updated_at: new Date().toISOString(),
       });
     }
@@ -360,8 +351,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
           <div className="space-y-2">
             <h2 className="text-2xl font-black text-white">Không Có Quyền Truy Cập</h2>
             <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed">
-              Trang quản trị hệ thống chỉ dành riêng cho tài khoản Quản Trị Viên (
-              <strong className="text-emerald-400">{ADMIN_EMAILS[0]}</strong>).
+              Trang quản trị hệ thống chỉ dành riêng cho tài khoản được cấp quyền Quản Trị Viên (ADMIN).
             </p>
             {userEmail && (
               <div className="text-xs text-slate-500 pt-1">
@@ -417,7 +407,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-400">
-            Quản trị kho từ vựng toàn hệ thống trên Supabase • Đang đăng nhập:{' '}
+            Quản trị kho từ vựng toàn hệ thống Cloud • Đang đăng nhập:{' '}
             <strong className="text-emerald-400 font-mono">{userEmail}</strong>
           </p>
         </div>
@@ -426,7 +416,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
           onClick={loadData}
           disabled={isLoading}
           className="flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold rounded-2xl border border-slate-700 text-xs sm:text-sm transition-all"
-          title="Làm mới dữ liệu từ Supabase"
+          title="Làm mới dữ liệu từ Cloud"
         >
           <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
           <span>Làm Mới Cloud</span>
@@ -450,7 +440,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
             <Sparkles className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-semibold text-slate-400">Từ Vựng Trên Supabase Cloud</div>
+            <div className="text-xs font-semibold text-slate-400">Từ Vựng Trên Hệ Thống Cloud</div>
             <div className="text-2xl font-black text-emerald-400">{cloudVocabs.length.toLocaleString()} từ</div>
           </div>
         </div>
@@ -489,7 +479,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
           }`}
         >
           <BookOpen className="w-4 h-4" />
-          <span>Kho Từ Supabase ({cloudVocabs.length})</span>
+          <span>Kho Từ Hệ Thống ({cloudVocabs.length})</span>
         </button>
 
         <button
@@ -542,10 +532,10 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
         <div className="p-6 sm:p-8 bg-slate-900/90 border border-slate-800 rounded-3xl space-y-6">
           <div className="border-b border-slate-800 pb-4">
             <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-              <span>Thêm Từ Vựng Mới Vào Kho Supabase</span>
+              <span>Thêm Từ Vựng Mới Vào Kho Hệ Thống</span>
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              Từ vựng thêm tại đây sẽ được lưu trực tiếp vào bảng <code>vocabularies</code> và phân phối cho toàn bộ người học.
+              Từ vựng thêm tại đây sẽ được lưu trực tiếp vào kho từ vựng và phân phối cho toàn bộ người học.
             </p>
           </div>
 
@@ -668,7 +658,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
               ) : (
                 <Save className="w-4 h-4 fill-slate-950" />
               )}
-              <span>Lưu Vào Supabase Cloud & Phát Hành Cho Học Viên</span>
+              <span>Lưu Vào Cloud & Phát Hành Cho Học Viên</span>
             </button>
           </form>
         </div>
@@ -682,7 +672,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
               <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-                <span>Kho Từ Vựng Trên Supabase (`vocabularies`)</span>
+                <span>Kho Từ Vựng Trên Hệ Thống Cloud</span>
                 <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 text-xs font-bold rounded-full">
                   {filteredVocabs.length} / {cloudVocabs.length}
                 </span>
@@ -754,7 +744,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                   <tr>
                     <td colSpan={5} className="p-8 text-center text-slate-500">
                       {cloudVocabs.length === 0
-                        ? 'Chưa có từ vựng nào trong bảng vocabularies trên Supabase. Hãy thêm từ đầu tiên!'
+                        ? 'Chưa có từ vựng nào trong kho từ vựng hệ thống. Hãy thêm từ đầu tiên!'
                         : 'Không tìm thấy từ vựng khớp với bộ lọc.'}
                     </td>
                   </tr>
@@ -807,7 +797,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                           </button>
                           <button
                             onClick={() => handleDeleteItem(item.id, item.word)}
-                            title="Xóa từ vựng khỏi Supabase"
+                            title="Xóa từ vựng khỏi kho hệ thống"
                             className="p-1.5 bg-slate-800 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -914,7 +904,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                     const isSelected = selectedUserIds.includes(p.id);
                     const isThisAdmin =
                       p.id === currentUserId ||
-                      (p.display_name && p.display_name.toLowerCase().includes('hoang2003eoe'));
+                      (p.display_name && p.display_name.includes('(Admin)'));
 
                     return (
                       <tr
@@ -955,7 +945,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                         </td>
 
                         <td className="p-3.5 font-bold text-orange-400">
-                          {p.streak || 1} ngày 🔥
+                          {p.streak ?? 0} ngày 🔥
                         </td>
 
                         <td className="p-3.5 font-mono text-slate-500 text-xs truncate max-w-[120px]" title={p.id}>
@@ -1005,7 +995,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                   </span>
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-400 mt-1">
-                  Công cụ can thiệp trực tiếp vào cơ sở dữ liệu học tập trên Supabase. Chỉ sử dụng khi cần bảo trì hoặc làm mới toàn bộ tiến trình hệ thống.
+                  Công cụ can thiệp trực tiếp vào cơ sở dữ liệu học tập trên máy chủ Cloud. Chỉ sử dụng khi cần bảo trì hoặc làm mới toàn bộ tiến trình hệ thống.
                 </p>
               </div>
             </div>
@@ -1100,7 +1090,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
 
             <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs sm:text-sm text-rose-300 space-y-2 leading-relaxed">
               <p className="font-bold text-rose-200">
-                CẢNH BÁO: Thao tác này sẽ xóa vĩnh viễn dữ liệu học tập của TẤT CẢ học viên trên Supabase!
+                CẢNH BÁO: Thao tác này sẽ xóa vĩnh viễn dữ liệu học tập của TẤT CẢ học viên trên Cloud!
               </p>
               <p className="text-slate-300 text-xs">
                 Toàn bộ tiến độ SRS, Level, XP, Streak và nhật ký hàng ngày sẽ bị xóa sạch hoặc đưa về 0. Thao tác này <strong>KHÔNG THỂ KHÔI PHỤC</strong>.
@@ -1209,8 +1199,8 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                 <li><strong>Dữ Liệu Tổng Quan:</strong> Reset về <strong>Level 1, 0 XP, 0 Streak</strong>, xóa nhật ký <code className="text-rose-300 font-mono bg-slate-900 px-1 py-0.5 rounded">daily_logs</code></li>
                 <li><strong>Bảo Lưu An Toàn:</strong> Kho từ vựng chung hệ thống và tài khoản đăng nhập được giữ nguyên 100%</li>
               </ul>
-              {((targetResetUser && (targetResetUser.id === currentUserId || targetResetUser.name.toLowerCase().includes('hoang2003eoe'))) ||
-                (selectedUserIds.some(id => id === currentUserId || id.includes('admin')))) && (
+              {((targetResetUser && targetResetUser.id === currentUserId) ||
+                (selectedUserIds.some(id => id === currentUserId))) && (
                 <div className="p-2.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-300 text-xs font-semibold">
                   ⚠️ Lưu ý: Tài khoản Admin đang đăng nhập nằm trong danh sách reset. Sau khi hoàn tất, hệ thống sẽ tự động làm sạch LocalStorage và tải lại trang.
                 </div>
@@ -1266,7 +1256,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
 
             <h3 className="text-lg font-black text-white flex items-center gap-2">
               <Edit2 className="w-5 h-5 text-emerald-400" />
-              <span>Chỉnh Sửa Từ Vựng (Supabase)</span>
+              <span>Chỉnh Sửa Từ Vựng Hệ Thống</span>
             </h3>
 
             <form onSubmit={handleSaveEdit} className="space-y-4">

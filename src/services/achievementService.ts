@@ -4,6 +4,7 @@
  */
 
 import { getSRSMasteryStatus } from './srsAlgorithm';
+import { useAppStore } from '../store/useAppStore';
 import type { UserProfile, DailyProgress } from '../types';
 
 export type AchievementCategory = 'streak' | 'vocab' | 'skills';
@@ -28,7 +29,7 @@ export function checkAndRecordNightOwl(): boolean {
   try {
     const hour = new Date().getHours();
     if (hour >= 23 || hour < 5) {
-      localStorage.setItem('learned_night_owl', 'true');
+      useAppStore.getState().setHasLearnedNightOwl(true);
       return true;
     }
   } catch {
@@ -80,32 +81,20 @@ export function evaluateUserAchievements(params: {
     0
   );
 
-  // 3. Dữ liệu điểm 4 kỹ năng từ localStorage
-  const getScores = (key: string): number[] => {
-    try {
-      return JSON.parse(localStorage.getItem(key) || '[]');
-    } catch {
-      return [];
-    }
-  };
+  // 3. Dữ liệu điểm 4 kỹ năng & Night Owl từ Zustand store
+  const { fourSkillsScores, hasLearnedNightOwl } = useAppStore.getState();
 
-  const listenScores = getScores('four_skills_listening_scores');
-  const readScores = getScores('four_skills_reading_scores');
-  const speakScores = getScores('four_skills_speaking_scores');
-  const writeScores = getScores('four_skills_writing_scores');
+  const listenScores = fourSkillsScores?.listening || [];
+  const readScores = fourSkillsScores?.reading || [];
+  const speakScores = fourSkillsScores?.speaking || [];
+  const writeScores = fourSkillsScores?.writing || [];
 
   const perfectListeningCount = listenScores.filter((s) => s >= 100).length;
   const perfectReadingCount = readScores.filter((s) => s >= 100).length;
   const perfectSpeakingCount = speakScores.filter((s) => s >= 90).length;
   const goodWritingCount = writeScores.filter((s) => s >= 70).length;
 
-  const isNightLearned = (() => {
-    try {
-      return localStorage.getItem('learned_night_owl') === 'true';
-    } catch {
-      return false;
-    }
-  })();
+  const isNightLearned = Boolean(hasLearnedNightOwl);
 
   const anyLessonDone =
     coreWordsCount > 0 ||
@@ -285,7 +274,7 @@ export function clearAllAchievements(): void {
     'unlocked_achievements',
     'equipped_title',
     'user_badges',
-    'learned_night_owl',
   ];
   keys.forEach((k) => localStorage.removeItem(k));
+  useAppStore.getState().setHasLearnedNightOwl(false);
 }

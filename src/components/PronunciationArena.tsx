@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Mic, 
   MicOff, 
@@ -11,12 +11,24 @@ import {
   Headphones, 
   Play, 
   Activity,
-  Award
+  Award,
+  AlertCircle
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
-import { speakWord, createSpeechRecognizer, calculateAccuracy } from '../services/speechService';
+import { 
+  speakWord, 
+  createSpeechRecognizer, 
+  calculateAccuracy,
+  isSpeechRecognitionSupported,
+  getSpeechBrowserSupport 
+} from '../services/speechService';
+import { SessionProgressHeader, NextActionPanel } from './session';
+import { derivePronunciationSessionModel, clampProgressPercent } from '../services/sessionExperienceAdapter';
+import type { SessionProgressMetric, SessionSourceContext } from '../types/sessionExperience';
 import { VocabWord } from '../types';
+import { savePronunciationAttempt } from '../services/leaderboardLearningMetrics';
+import { scheduleCloudSync } from '../services/cloudSyncService';
 
 type PronunciationSubTab = 'ai_speech' | 'shadowing' | 'dictation';
 
@@ -26,12 +38,75 @@ export const PronunciationArena: React.FC = () => {
     gainXP, 
     consumeHeart, 
     recordPronunciationMastered,
+    recordMistake,
+    recordMistakeCorrect,
     audioVoice, 
-    audioSpeed 
+    audioSpeed,
+    activePracticeConfig,
+    clearAdaptivePractice,
+    mistakeBank,
   } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<PronunciationSubTab>('ai_speech');
+  const [activeTab, setActiveTab] = useState<PronunciationSubTab>(() => {
+    if (activePracticeConfig?.module === 'shadowing') return 'shadowing';
+    return 'ai_speech';
+  });
   const [currentIdx, setCurrentIdx] = useState(0);
+  const [targetedWordOverride, setTargetedWordOverride] = useState<VocabWord | null>(null);
+
+  // Nhảy trực tiếp tới từ mục tiêu từ phiên Adaptive Practice nếu có
+  useEffect(() => {
+    if (activePracticeConfig?.itemIds && activePracticeConfig.itemIds.length > 0) {
+      if (activePracticeConfig.module === 'pronunciation' || activePracticeConfig.module === 'shadowing') {
+        if (activePracticeConfig.module === 'shadowing') {
+          setActiveTab('shadowing');
+        } else {
+          setActiveTab('ai_speech');
+        }
+        const targetId = activePracticeConfig.itemIds[0].trim().toLowerCase();
+        // 1. Khớp chính xác theo ID trước để tránh va chạm từ cùng tên
+        let foundIdx = vocabularyList.findIndex((w) => w.id?.toLowerCase() === targetId);
+        // 2. Fallback sang khớp theo word
+        if (foundIdx < 0) {
+          foundIdx = vocabularyList.findIndex((w) => w.word.toLowerCase() === targetId);
+        }
+
+        if (foundIdx >= 0) {
+          setCurrentIdx(foundIdx);
+          setTargetedWordOverride(null);
+        } else {
+          // Nếu từ chỉ có trong sổ bẫy lỗi mà chưa có trong danh sách từ chuẩn
+          const fromMistake = Object.values(mistakeBank || {}).find(
+            (m) => m.id?.toLowerCase() === targetId
+          ) || Object.values(mistakeBank || {}).find(
+            (m) => m.word.toLowerCase() === targetId
+          );
+          if (fromMistake) {
+            setTargetedWordOverride({
+              id: fromMistake.id,
+              word: fromMistake.word,
+              ipa: fromMistake.ipa || '',
+              meaning: fromMistake.meaning || '',
+              partOfSpeech: 'noun',
+              example: fromMistake.example || `Let's practice pronouncing ${fromMistake.word}.`,
+              tag: fromMistake.tag || 'Daily',
+              srsLevel: 0,
+              interval: 1,
+              easeFactor: 2.5,
+              nextReviewDate: new Date().toISOString(),
+            } as VocabWord);
+          }
+        }
+        // Dọn dẹp ephemeral config ngay lập tức để không rò rỉ sang phiên bình thường
+        clearAdaptivePractice();
+      }
+    }
+  }, [activePracticeConfig, vocabularyList, mistakeBank, clearAdaptivePractice]);
+
+  // Browser Speech Support Check
+  const isSupported = isSpeechRecognitionSupported();
+  const browserSupport = getSpeechBrowserSupport();
+  const [isPermissionDenied, setIsPermissionDenied] = useState(false);
 
   // 1. AI Speech State
   const [isRecording, setIsRecording] = useState(false);
@@ -50,7 +125,50 @@ export const PronunciationArena: React.FC = () => {
   const [dictationChecked, setDictationChecked] = useState(false);
   const [isDictationCorrect, setIsDictationCorrect] = useState(false);
 
-  const currentWord: VocabWord | undefined = vocabularyList[currentIdx % vocabularyList.length];
+  const currentWord: VocabWord | undefined = useMemo(() => {
+    if (targetedWordOverride) return targetedWordOverride;
+    return vocabularyList[currentIdx % vocabularyList.length];
+  }, [targetedWordOverride, vocabularyList, currentIdx]);
+
+  // Session Experience & Planned Items Tracking (Phase 7)
+  const [totalPlannedItems] = useState<number>(() => {
+    if (activePracticeConfig?.itemIds && (activePracticeConfig.module === 'pronunciation' || activePracticeConfig.module === 'shadowing')) {
+      return activePracticeConfig.itemIds.length;
+    }
+    return 0;
+  });
+  const [completedPromptsCount, setCompletedPromptsCount] = useState(0);
+  const [sessionCompletedCount, setSessionCompletedCount] = useState(0);
+  const [sessionStreak, setSessionStreak] = useState(0);
+
+  const [sourceContext] = useState<SessionSourceContext | undefined>(() => {
+    if (!activePracticeConfig) return undefined;
+    return {
+      todayPlanTaskId: activePracticeConfig.planItemId,
+      sourceModule: activePracticeConfig.module,
+      targetItemIds: activePracticeConfig.itemIds,
+      mistakeType: activePracticeConfig.mistakeType,
+    };
+  });
+
+  const pronunciationMetric: SessionProgressMetric = useMemo(() => {
+    if (totalPlannedItems > 0) {
+      return {
+        kind: 'discrete_items',
+        currentIndex: completedPromptsCount,
+        totalItems: totalPlannedItems,
+        answeredCount: completedPromptsCount,
+        remainingCount: Math.max(0, totalPlannedItems - completedPromptsCount),
+        progressPercent: clampProgressPercent(completedPromptsCount, totalPlannedItems),
+        counterFormat: 'answered',
+      };
+    }
+    return {
+      kind: 'unbounded',
+      completedCount: sessionCompletedCount,
+      streakCount: sessionStreak,
+    };
+  }, [totalPlannedItems, completedPromptsCount, sessionCompletedCount, sessionStreak]);
 
   // Reset states khi chuyển từ
   useEffect(() => {
@@ -69,6 +187,9 @@ export const PronunciationArena: React.FC = () => {
   }, [currentIdx, activeTab]);
 
   const handleNextWord = () => {
+    if (targetedWordOverride) {
+      setTargetedWordOverride(null);
+    }
     setCurrentIdx((prev) => prev + 1);
   };
 
@@ -76,6 +197,7 @@ export const PronunciationArena: React.FC = () => {
   const handleStartAISpeech = () => {
     if (!currentWord) return;
     setMicError('');
+    setIsPermissionDenied(false);
     setAccuracyScore(null);
     setTranscript('');
 
@@ -86,17 +208,50 @@ export const PronunciationArena: React.FC = () => {
           setIsRecording(false);
           const acc = calculateAccuracy(currentWord.word, text);
           setAccuracyScore(acc);
+          setSessionCompletedCount((prev) => prev + 1);
+          if (totalPlannedItems > 0) {
+            setCompletedPromptsCount((prev) => Math.min(totalPlannedItems, prev + 1));
+          }
+
+          if (text.trim()) {
+            savePronunciationAttempt({
+              id: `pron_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              word: currentWord.word,
+              score: acc,
+              timestamp: new Date().toISOString(),
+              isTrusted: true,
+              isFallback: false,
+              recognizedText: text,
+            });
+            scheduleCloudSync(2000);
+          }
 
           if (acc >= 75) {
+            setSessionStreak((prev) => prev + 1);
             recordPronunciationMastered(20);
-            confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+            recordMistakeCorrect(currentWord.id || currentWord.word, { type: 'pronunciation' });
+            triggerCelebration('micro', { particleCount: 60, spread: 70, origin: { y: 0.6 } });
+          } else if (acc >= 60) {
+            // Neutral (60% đến < 75%): Không ghi mistake và không ghi correct
+            gainXP(10);
           } else {
+            // < 60%: Ghi mistake
+            setSessionStreak(0);
+            recordMistake(currentWord, 'pronunciation', {
+              type: 'pronunciation',
+              userAnswer: text,
+              expectedAnswer: currentWord.word,
+              context: `Pronunciation Arena accuracy: ${acc}%`,
+            });
             consumeHeart();
           }
         }
       },
-      (err) => {
+      (err, detail) => {
         setMicError(err);
+        if (detail?.code === 'permission-denied') {
+          setIsPermissionDenied(true);
+        }
         setIsRecording(false);
       }
     );
@@ -109,6 +264,7 @@ export const PronunciationArena: React.FC = () => {
   // 2. Logic Shadowing (Nhại Theo Mẫu)
   const handleStartShadowingFlow = () => {
     if (!currentWord) return;
+    setIsPermissionDenied(false);
     // Bước 1: Phát âm mẫu của người bản xứ
     speakWord(currentWord.example || currentWord.word, audioVoice, audioSpeed);
     
@@ -144,15 +300,38 @@ export const PronunciationArena: React.FC = () => {
           setShadowingStep('result');
           const acc = calculateAccuracy(targetText, text);
           setShadowScore(acc);
+          setSessionCompletedCount((prev) => prev + 1);
+          if (totalPlannedItems > 0) {
+            setCompletedPromptsCount((prev) => Math.min(totalPlannedItems, prev + 1));
+          }
+
+          if (text.trim()) {
+            savePronunciationAttempt({
+              id: `pron_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              word: currentWord.word,
+              score: acc,
+              timestamp: new Date().toISOString(),
+              isTrusted: true,
+              isFallback: false,
+              recognizedText: text,
+            });
+            scheduleCloudSync(2000);
+          }
 
           if (acc >= 70) {
+            setSessionStreak((prev) => prev + 1);
             gainXP(25);
-            confetti({ particleCount: 70, spread: 70, origin: { y: 0.6 } });
+            triggerCelebration('micro', { particleCount: 70, spread: 70, origin: { y: 0.6 } });
+          } else {
+            setSessionStreak(0);
           }
         }
       },
-      (err) => {
+      (err, detail) => {
         setMicError(err);
+        if (detail?.code === 'permission-denied') {
+          setIsPermissionDenied(true);
+        }
         setShadowingStep('result');
       }
     );
@@ -173,11 +352,17 @@ export const PronunciationArena: React.FC = () => {
 
     setDictationChecked(true);
     setIsDictationCorrect(isMatch);
+    setSessionCompletedCount((prev) => prev + 1);
+    if (totalPlannedItems > 0) {
+      setCompletedPromptsCount((prev) => Math.min(totalPlannedItems, prev + 1));
+    }
 
     if (isMatch) {
+      setSessionStreak((prev) => prev + 1);
       gainXP(20);
-      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+      triggerCelebration('micro', { particleCount: 50, spread: 60, origin: { y: 0.6 } });
     } else {
+      setSessionStreak(0);
       consumeHeart();
     }
   };
@@ -192,7 +377,44 @@ export const PronunciationArena: React.FC = () => {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
+      {/* SESSION PROGRESS HEADER (PHASE 7 DURING UX) */}
+      <SessionProgressHeader
+        title="Luyện Phát Âm & Ngữ Âm Bản Xứ"
+        subtitle={`Từ vựng: ${currentWord.word} • ${
+          activeTab === 'ai_speech' ? 'Luyện Nói AI' : activeTab === 'shadowing' ? 'Shadowing' : 'Chép Chính Tả'
+        }`}
+        badgeLabel="AI SPEECH"
+        metric={pronunciationMetric}
+        streakCount={sessionStreak}
+        onExit={() => useAppStore.getState().navigateToTab('dashboard')}
+      />
       
+      {/* Browser Speech API Warning Banner */}
+      {!isSupported && (
+        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3 text-amber-300 text-xs sm:text-sm shadow-lg">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="text-left space-y-1">
+            <p className="font-bold">Trình duyệt hiện tại chưa hỗ trợ nhận diện giọng nói.</p>
+            <p className="text-slate-300 leading-relaxed">
+              Để luyện nói và chấm điểm phát âm chính xác, vui lòng mở ứng dụng trên <strong>Google Chrome</strong> hoặc <strong>Microsoft Edge</strong>.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Permission Denied Guide Banner */}
+      {isPermissionDenied && (
+        <div className="p-4 bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-2xl text-xs sm:text-sm text-left flex items-start gap-3 shadow-lg">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold">Quyền truy cập Microphone bị từ chối.</p>
+            <p className="text-slate-300 leading-relaxed">
+              Bấm vào <strong>biểu tượng ổ khóa 🔒 / quyền trang web</strong> trên thanh URL của trình duyệt để gạt bật lại Micro, sau đó tải lại trang hoặc bấm thử lại.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Sub-Tabs Selector */}
       <div className="flex bg-slate-900 border border-slate-800 p-1.5 rounded-2xl shadow-xl">
         <button
@@ -273,20 +495,28 @@ export const PronunciationArena: React.FC = () => {
             )}
 
             <button
+              data-testid="pronunciation-mic-btn"
+              aria-label="Thu âm phát âm"
+              aria-busy={isRecording}
               onClick={handleStartAISpeech}
-              disabled={isRecording}
-              className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all shadow-xl ${
-                isRecording
-                  ? 'bg-red-500 text-white shadow-red-500/40'
-                  : 'bg-gradient-to-tr from-teal-500 to-emerald-400 hover:scale-105 text-slate-950 shadow-teal-500/30'
+              disabled={isRecording || !isSupported}
+              title={!isSupported ? 'Trình duyệt chưa hỗ trợ nhận diện giọng nói' : undefined}
+              className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-150 shadow-xl active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${
+                !isSupported
+                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50 shadow-none'
+                  : isRecording
+                  ? 'bg-red-500 text-white shadow-red-500/40 animate-pulse motion-reduce:animate-none'
+                  : 'bg-gradient-to-tr from-teal-500 to-emerald-400 hover:scale-[1.02] text-slate-950 shadow-teal-500/30'
               }`}
             >
-              {isRecording ? <MicOff className="w-8 h-8 animate-bounce" /> : <Mic className="w-8 h-8" />}
+              {isRecording ? <MicOff className="w-8 h-8 animate-bounce motion-reduce:animate-none" /> : <Mic className="w-8 h-8" />}
             </button>
           </div>
 
           <p className="text-xs text-slate-400">
-            {isRecording 
+            {!isSupported
+              ? '⚠️ Trình duyệt hiện tại chưa hỗ trợ nhận diện giọng nói. Hãy mở trên Chrome hoặc Edge.'
+              : isRecording 
               ? '🎙️ Đang lắng nghe bạn nói... hãy phát âm to và rõ ràng nhé!' 
               : 'Nhấn vào Micro và đọc to từ vựng tiếng Anh trên'}
           </p>
@@ -298,7 +528,7 @@ export const PronunciationArena: React.FC = () => {
           )}
 
           {accuracyScore !== null && (
-            <div className={`p-4 rounded-2xl flex items-center justify-between ${
+            <div className={`p-4 rounded-2xl flex items-center justify-between animate-fadeIn motion-reduce:animate-none ${
               accuracyScore >= 75 
                 ? 'bg-teal-500/20 border border-teal-500/40 text-teal-300' 
                 : 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
@@ -322,7 +552,7 @@ export const PronunciationArena: React.FC = () => {
           <div className="pt-4 border-t border-slate-800 flex justify-end">
             <button
               onClick={handleNextWord}
-              className="flex items-center gap-2 px-6 py-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-2xl shadow-lg shadow-teal-500/20 transition-all text-sm"
+              className="flex items-center gap-2 px-6 py-3 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black rounded-2xl shadow-lg shadow-teal-500/20 transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 text-sm"
             >
               <span>Từ tiếp theo</span>
               <ArrowRight className="w-4 h-4" />
@@ -362,13 +592,21 @@ export const PronunciationArena: React.FC = () => {
               <div className="space-y-4">
                 <button
                   onClick={handleStartShadowingFlow}
-                  className="px-8 py-4 bg-gradient-to-r from-teal-500 to-emerald-400 hover:from-teal-400 hover:to-emerald-300 text-slate-950 font-black rounded-2xl shadow-xl shadow-teal-500/25 transition-all text-base flex items-center justify-center gap-3 mx-auto transform hover:scale-105"
+                  disabled={!isSupported}
+                  title={!isSupported ? 'Trình duyệt chưa hỗ trợ nhận diện giọng nói' : undefined}
+                  className={`px-8 py-4 font-black rounded-2xl text-base flex items-center justify-center gap-3 mx-auto transition-all ${
+                    !isSupported
+                      ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50 shadow-none'
+                      : 'bg-gradient-to-r from-teal-500 to-emerald-400 hover:from-teal-400 hover:to-emerald-300 text-slate-950 shadow-xl shadow-teal-500/25 transform hover:scale-105'
+                  }`}
                 >
-                  <Play className="w-5 h-5 fill-slate-950" />
+                  <Play className="w-5 h-5 fill-current" />
                   <span>Nghe Mẫu & Bắt Đầu Shadowing</span>
                 </button>
                 <p className="text-xs text-slate-400">
-                  Hệ thống sẽ phát câu mẫu $\rightarrow$ Đếm 3 giây $\rightarrow$ Bạn nói đè theo nhịp điệu!
+                  {!isSupported 
+                    ? '⚠️ Hãy mở trên Google Chrome hoặc Edge để sử dụng tính năng Shadowing.'
+                    : 'Hệ thống sẽ phát câu mẫu → Đếm 3 giây → Bạn nói đè theo nhịp điệu!'}
                 </p>
               </div>
             )}
@@ -535,6 +773,32 @@ export const PronunciationArena: React.FC = () => {
 
         </div>
       )}
+
+      {/* NEXT ACTION PANEL (PHASE 7 AFTER UX) */}
+      <div className="pt-4 border-t border-slate-800">
+        <NextActionPanel
+          actions={[
+            {
+              id: 'next-action-today-hub',
+              label: 'Về Kế Hoạch Hôm Nay',
+              isPrimary: true,
+              onClick: () => useAppStore.getState().navigateToTab('dashboard'),
+            },
+            {
+              id: 'next-word',
+              label: 'Từ Tiếp Theo',
+              variant: 'secondary',
+              onClick: handleNextWord,
+            },
+            {
+              id: 'open-mistakes',
+              label: '📖 Sổ Tay Bẫy Lỗi',
+              variant: 'outline',
+              onClick: () => useAppStore.getState().navigateToTab('mistakes'),
+            },
+          ]}
+        />
+      </div>
 
     </div>
   );

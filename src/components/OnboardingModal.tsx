@@ -10,7 +10,7 @@ import {
   ArrowRight,
   ShieldCheck
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
 
 interface OnboardingModalProps {
@@ -20,7 +20,7 @@ interface OnboardingModalProps {
 type GoalOption = 'tech' | 'business' | 'toeic' | 'ielts' | 'daily';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen }) => {
-  const { setProfileName, syncVocab5000 } = useAppStore();
+  const { setProfileName } = useAppStore();
   const [userName, setUserName] = useState('');
   const [selectedGoal, setSelectedGoal] = useState<GoalOption>('daily');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -34,13 +34,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen }) => {
 
     setIsSubmitting(true);
     setProfileName(clean, selectedGoal);
-    syncVocab5000();
 
-    confetti({
-      particleCount: 120,
-      spread: 90,
-      origin: { y: 0.5 },
-    });
+    triggerCelebration('major_milestone');
 
     setIsSubmitting(false);
   };
@@ -79,8 +74,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen }) => {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-xl bg-slate-900 border-2 border-emerald-500/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-6 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fadeIn motion-reduce:animate-none">
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-modal-title"
+        className="relative w-full max-w-xl bg-slate-900 border-2 border-emerald-500/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-6 overflow-hidden animate-scaleIn motion-reduce:animate-none"
+      >
         
         {/* Glow Background Gradient */}
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -92,7 +92,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen }) => {
             <Rocket className="w-8 h-8" />
           </div>
 
-          <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+          <h2 id="onboarding-modal-title" className="text-2xl sm:text-3xl font-black text-white tracking-tight">
             Chào mừng bạn đến với English Master! 🚀
           </h2>
 

@@ -42,7 +42,7 @@ export function calculateSM2(
       interval = grade === 1 ? 3 : 6;
     } else {
       const modifier = grade === 1 ? 1.2 : grade === 3 ? 1.4 : 1.0;
-      interval = Math.max(1, Math.round(currentInterval * easeFactor * modifier));
+      interval = Math.min(36500, Math.max(1, Math.round(currentInterval * easeFactor * modifier)));
     }
     srsLevel = currentRepetition + 1;
   }
@@ -59,10 +59,10 @@ export function calculateSM2(
   };
 }
 
-export function isDueForReview(nextReviewDate: string): boolean {
+export function isDueForReview(nextReviewDate: string, refTimeMs?: number): boolean {
   if (!nextReviewDate) return true;
   const reviewTime = new Date(nextReviewDate).getTime();
-  const now = new Date().getTime();
+  const now = typeof refTimeMs === 'number' ? refTimeMs : Date.now();
   return reviewTime <= now;
 }
 

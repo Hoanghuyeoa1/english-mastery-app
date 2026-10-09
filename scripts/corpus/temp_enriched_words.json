@@ -1,0 +1,322 @@
+[
+  {
+    "id": "w_10k_03701",
+    "word": "Abolish",
+    "ipa": "/əˈbɒl.ɪʃ/",
+    "phonetic": "/əˈbɒl.ɪʃ/",
+    "partOfSpeech": "verb",
+    "meaning": "Bãi bỏ, hủy bỏ (luật lệ, tập tục, chế độ)",
+    "definitionEn": "Formally put an end to a system, practice, or institution.",
+    "example": "The national parliament voted to abolish the outdated maritime tariffs.",
+    "exampleEn": "The national parliament voted to abolish the outdated maritime tariffs.",
+    "exampleMeaning": "Nghị viện quốc gia đã bỏ phiếu bãi bỏ các mức thuế hàng hải lỗi thời.",
+    "exampleVi": "Nghị viện quốc gia đã bỏ phiếu bãi bỏ các mức thuế hàng hải lỗi thời.",
+    "category": "Academic / IELTS",
+    "topic": "Học thuật",
+    "level": "B2",
+    "tag": "Academic",
+    "collocations": [
+      "abolish a law",
+      "abolish slavery",
+      "vote to abolish"
+    ],
+    "synonyms": [
+      "repeal",
+      "annul",
+      "revoke"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.492Z"
+  },
+  {
+    "id": "w_10k_03702",
+    "word": "Abrupt",
+    "ipa": "/əˈbrʌpt/",
+    "phonetic": "/əˈbrʌpt/",
+    "partOfSpeech": "adjective",
+    "meaning": "Bất ngờ, đột ngột, cộc lốc",
+    "definitionEn": "Sudden and unexpected; brief to the point of rudeness.",
+    "example": "The technical conference came to an abrupt halt when the power grid failed.",
+    "exampleEn": "The technical conference came to an abrupt halt when the power grid failed.",
+    "exampleMeaning": "Hội nghị kỹ thuật đột ngột dừng lại khi lưới điện gặp sự cố.",
+    "exampleVi": "Hội nghị kỹ thuật đột ngột dừng lại khi lưới điện gặp sự cố.",
+    "category": "Oxford Core",
+    "topic": "Giao tiếp hàng ngày",
+    "level": "B2",
+    "tag": "Daily",
+    "collocations": [
+      "abrupt change",
+      "abrupt halt",
+      "abrupt manner"
+    ],
+    "synonyms": [
+      "sudden",
+      "unexpected",
+      "curt"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03703",
+    "word": "Absurd",
+    "ipa": "/əbˈsɜːd/",
+    "phonetic": "/əbˈsɜːd/",
+    "partOfSpeech": "adjective",
+    "meaning": "Phi lý, vô lý, ngớ ngẩn",
+    "definitionEn": "Wildly unreasonable, illogical, or inappropriate.",
+    "example": "It is absurd to expect fluent spoken reflexes without daily practice.",
+    "exampleEn": "It is absurd to expect fluent spoken reflexes without daily practice.",
+    "exampleMeaning": "Thật phi lý khi mong đợi phản xạ nói lưu loát mà không luyện tập mỗi ngày.",
+    "exampleVi": "Thật phi lý khi mong đợi phản xạ nói lưu loát mà không luyện tập mỗi ngày.",
+    "category": "Academic / IELTS",
+    "topic": "Cảm xúc",
+    "level": "B2",
+    "tag": "Academic",
+    "collocations": [
+      "completely absurd",
+      "absurd notion",
+      "border on the absurd"
+    ],
+    "synonyms": [
+      "ridiculous",
+      "ludicrous",
+      "preposterous"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03704",
+    "word": "Abundance",
+    "ipa": "/əˈbʌn.dəns/",
+    "phonetic": "/əˈbʌn.dəns/",
+    "partOfSpeech": "noun",
+    "meaning": "Sự dồi dào, phong phú, dư dật",
+    "definitionEn": "A very large quantity of something.",
+    "example": "The tropical river basin boasts an abundance of rare wildlife species.",
+    "exampleEn": "The tropical river basin boasts an abundance of rare wildlife species.",
+    "exampleMeaning": "Lưu vực sông nhiệt đới sở hữu sự phong phú dồi dào các loài động vật hoang dã quý hiếm.",
+    "exampleVi": "Lưu vực sông nhiệt đới sở hữu sự phong phú dồi dào các loài động vật hoang dã quý hiếm.",
+    "category": "Oxford Core",
+    "topic": "Du lịch",
+    "level": "B2",
+    "tag": "Academic",
+    "collocations": [
+      "abundance of resources",
+      "in abundance",
+      "natural abundance"
+    ],
+    "synonyms": [
+      "plenty",
+      "wealth",
+      "copiousness"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03705",
+    "word": "Accessible",
+    "ipa": "/əkˈses.ə.bəl/",
+    "phonetic": "/əkˈses.ə.bəl/",
+    "partOfSpeech": "adjective",
+    "meaning": "Dễ tiếp cận, có thể tiếp cận được",
+    "definitionEn": "Able to be reached or easily understood and appreciated.",
+    "example": "Digital learning platforms make quality English training accessible to all.",
+    "exampleEn": "Digital learning platforms make quality English training accessible to all.",
+    "exampleMeaning": "Các nền tảng học tập số giúp việc đào tạo tiếng Anh chất lượng trở nên dễ tiếp cận với mọi người.",
+    "exampleVi": "Các nền tảng học tập số giúp việc đào tạo tiếng Anh chất lượng trở nên dễ tiếp cận với mọi người.",
+    "category": "IT / Tech",
+    "topic": "Học thuật",
+    "level": "B2",
+    "tag": "Tech",
+    "collocations": [
+      "easily accessible",
+      "accessible format",
+      "make accessible"
+    ],
+    "synonyms": [
+      "reachable",
+      "attainable",
+      "approachable"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03706",
+    "word": "Accuracy",
+    "ipa": "/ˈæk.jə.rə.si/",
+    "phonetic": "/ˈæk.jə.rə.si/",
+    "partOfSpeech": "noun",
+    "meaning": "Độ chính xác, sự chuẩn xác",
+    "definitionEn": "The quality or state of being correct or precise.",
+    "example": "Voice recognition algorithms evaluate pronunciation accuracy in real time.",
+    "exampleEn": "Voice recognition algorithms evaluate pronunciation accuracy in real time.",
+    "exampleMeaning": "Các thuật toán nhận diện giọng nói đánh giá độ chính xác phát âm trong thời gian thực.",
+    "exampleVi": "Các thuật toán nhận diện giọng nói đánh giá độ chính xác phát âm trong thời gian thực.",
+    "category": "Academic / IELTS",
+    "topic": "Học thuật",
+    "level": "B2",
+    "tag": "Academic",
+    "collocations": [
+      "high accuracy",
+      "verify accuracy",
+      "accuracy of data"
+    ],
+    "synonyms": [
+      "precision",
+      "exactness",
+      "correctness"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03707",
+    "word": "Acknowledgment",
+    "ipa": "/əkˈnɒl.ɪdʒ.mənt/",
+    "phonetic": "/əkˈnɒl.ɪdʒ.mənt/",
+    "partOfSpeech": "noun",
+    "meaning": "Sự công nhận, thừa nhận, lời tri ân",
+    "definitionEn": "Acceptance of the truth or existence of something; recognition of merit.",
+    "example": "The lead researcher received international acknowledgment for the breakthrough.",
+    "exampleEn": "The lead researcher received international acknowledgment for the breakthrough.",
+    "exampleMeaning": "Nhà nghiên cứu trưởng đã nhận được sự công nhận quốc tế cho bước đột phá.",
+    "exampleVi": "Nhà nghiên cứu trưởng đã nhận được sự công nhận quốc tế cho bước đột phá.",
+    "category": "Business / Workplace",
+    "topic": "Công việc",
+    "level": "B2",
+    "tag": "Business",
+    "collocations": [
+      "public acknowledgment",
+      "in acknowledgment of",
+      "letter of acknowledgment"
+    ],
+    "synonyms": [
+      "recognition",
+      "admission",
+      "tribute"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03708",
+    "word": "Activation",
+    "ipa": "/ˌæk.tɪˈveɪ.ʃən/",
+    "phonetic": "/ˌæk.tɪˈveɪ.ʃən/",
+    "partOfSpeech": "noun",
+    "meaning": "Sự kích hoạt, khởi động hệ thống",
+    "definitionEn": "The action or process of making something active or operational.",
+    "example": "The activation of automated backup nodes prevented any service downtime.",
+    "exampleEn": "The activation of automated backup nodes prevented any service downtime.",
+    "exampleMeaning": "Việc kích hoạt các nút sao lưu tự động đã ngăn ngừa mọi sự gián đoạn dịch vụ.",
+    "exampleVi": "Việc kích hoạt các nút sao lưu tự động đã ngăn ngừa mọi sự gián đoạn dịch vụ.",
+    "category": "IT / Tech",
+    "topic": "Công nghệ",
+    "level": "B2",
+    "tag": "Tech",
+    "collocations": [
+      "activation key",
+      "account activation",
+      "prompt activation"
+    ],
+    "synonyms": [
+      "triggering",
+      "initialization",
+      "stimulation"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03709",
+    "word": "Adaptation",
+    "ipa": "/ˌæd.æpˈteɪ.ʃən/",
+    "phonetic": "/ˌæd.æpˈteɪ.ʃən/",
+    "partOfSpeech": "noun",
+    "meaning": "Sự thích nghi, tác phẩm chuyển thể",
+    "definitionEn": "The process of changing to suit different conditions or environments.",
+    "example": "Rapid technological adaptation is critical for surviving modern industry shifts.",
+    "exampleEn": "Rapid technological adaptation is critical for surviving modern industry shifts.",
+    "exampleMeaning": "Sự thích nghi công nghệ nhanh chóng mang tính sống còn để tồn tại trước các biến đổi ngành hiện đại.",
+    "exampleVi": "Sự thích nghi công nghệ nhanh chóng mang tính sống còn để tồn tại trước các biến đổi ngành hiện đại.",
+    "category": "Academic / IELTS",
+    "topic": "Học thuật",
+    "level": "B2",
+    "tag": "Academic",
+    "collocations": [
+      "climatic adaptation",
+      "process of adaptation",
+      "film adaptation"
+    ],
+    "synonyms": [
+      "adjustment",
+      "acclimatization",
+      "modification"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  },
+  {
+    "id": "w_10k_03710",
+    "word": "Adequacy",
+    "ipa": "/ˈæd.ə.kwə.si/",
+    "phonetic": "/ˈæd.ə.kwə.si/",
+    "partOfSpeech": "noun",
+    "meaning": "Sự thỏa đáng, mức độ đầy đủ đáp ứng yêu cầu",
+    "definitionEn": "The state or quality of being adequate or sufficient for a purpose.",
+    "example": "Independent auditors verified the adequacy of corporate security safeguards.",
+    "exampleEn": "Independent auditors verified the adequacy of corporate security safeguards.",
+    "exampleMeaning": "Các kiểm toán viên độc lập đã xác minh tính thỏa đáng của các biện pháp bảo vệ an ninh doanh nghiệp.",
+    "exampleVi": "Các kiểm toán viên độc lập đã xác minh tính thỏa đáng của các biện pháp bảo vệ an ninh doanh nghiệp.",
+    "category": "Business / Workplace",
+    "topic": "Công việc",
+    "level": "C1",
+    "tag": "Business",
+    "collocations": [
+      "adequacy of resources",
+      "ensure adequacy",
+      "evaluate adequacy"
+    ],
+    "synonyms": [
+      "sufficiency",
+      "competence",
+      "suitability"
+    ],
+    "isFavorite": false,
+    "srsLevel": 0,
+    "interval": 0,
+    "easeFactor": 2.5,
+    "nextReviewDate": "2026-10-03T15:20:16.493Z"
+  }
+]

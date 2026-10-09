@@ -6,11 +6,10 @@ import {
   Copy, 
   Check, 
   RotateCcw, 
-  ShieldCheck, 
-  AlertTriangle,
-  FileJson
+  ShieldCheck 
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import type { FourSkillsScores } from '../types';
 
 interface BackupModalProps {
   isOpen: boolean;
@@ -18,16 +17,54 @@ interface BackupModalProps {
 }
 
 export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => {
-  const { exportBackupData, importBackupData, resetToDefault, profile } = useAppStore();
+  const { 
+    exportBackupData, 
+    importBackupData, 
+    resetToDefault, 
+    profile,
+    fourSkillsScores,
+    hasLearnedNightOwl,
+    setFourSkillsScores,
+    setHasLearnedNightOwl 
+  } = useAppStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [copied, setCopied] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; isError: boolean } | null>(null);
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
+  // Helper đảm bảo schema object xuất ra đầy đủ các trường mới nhất
+  const getPreparedBackupJson = (): string => {
+    let jsonStr = exportBackupData();
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed.fourSkillsScores) {
+        parsed.fourSkillsScores = fourSkillsScores;
+      }
+      if (parsed.hasLearnedNightOwl === undefined) {
+        parsed.hasLearnedNightOwl = hasLearnedNightOwl;
+      }
+      jsonStr = JSON.stringify(parsed, null, 2);
+    } catch (e) {
+      console.warn('[BackupModal] Error preparing backup json schema:', e);
+    }
+    return jsonStr;
+  };
+
   const handleExportDownload = () => {
-    const jsonStr = exportBackupData();
+    const jsonStr = getPreparedBackupJson();
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -40,7 +77,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
   };
 
   const handleCopyClipboard = () => {
-    const jsonStr = exportBackupData();
+    const jsonStr = getPreparedBackupJson();
     navigator.clipboard.writeText(jsonStr);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -53,10 +90,65 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
     const reader = new FileReader();
     reader.onload = (event) => {
       const content = event.target?.result as string;
-      const res = importBackupData(content);
-      setStatusMsg({ text: res.message, isError: !res.success });
+      try {
+        const parsed = JSON.parse(content);
+        if (!parsed || typeof parsed !== 'object') {
+          setStatusMsg({ text: 'File không đúng định dạng JSON hợp lệ.', isError: true });
+          return;
+        }
+
+        // Validate cấu trúc cơ bản của file backup
+        if (!parsed.profile && !parsed.vocabularyList && !parsed.srsProgressMap && !parsed.userCustomWords) {
+          setStatusMsg({ text: 'File JSON không phải bản sao lưu hợp lệ của ứng dụng.', isError: true });
+          return;
+        }
+
+        // Fallback an toàn cho fourSkillsScores nếu backup là bản cũ
+        const fallbackSkills: FourSkillsScores = {
+          listening: [],
+          reading: [],
+          speaking: [],
+          writing: [],
+        };
+
+        const validatedSkills: FourSkillsScores = parsed.fourSkillsScores && typeof parsed.fourSkillsScores === 'object'
+          ? {
+              listening: Array.isArray(parsed.fourSkillsScores.listening)
+                ? parsed.fourSkillsScores.listening.filter((n: unknown): n is number => typeof n === 'number' && !isNaN(n)).slice(-50)
+                : [],
+              reading: Array.isArray(parsed.fourSkillsScores.reading)
+                ? parsed.fourSkillsScores.reading.filter((n: unknown): n is number => typeof n === 'number' && !isNaN(n)).slice(-50)
+                : [],
+              speaking: Array.isArray(parsed.fourSkillsScores.speaking)
+                ? parsed.fourSkillsScores.speaking.filter((n: unknown): n is number => typeof n === 'number' && !isNaN(n)).slice(-50)
+                : [],
+              writing: Array.isArray(parsed.fourSkillsScores.writing)
+                ? parsed.fourSkillsScores.writing.filter((n: unknown): n is number => typeof n === 'number' && !isNaN(n)).slice(-50)
+                : [],
+            }
+          : fallbackSkills;
+
+        // Fallback an toàn cho hasLearnedNightOwl
+        const validatedNightOwl: boolean = Boolean(parsed.hasLearnedNightOwl);
+
+        // Nạp vào store qua importBackupData
+        const res = importBackupData(content);
+
+        if (res.success) {
+          // Ghi nhận trực tiếp fourSkillsScores và hasLearnedNightOwl vào store
+          setFourSkillsScores(validatedSkills);
+          setHasLearnedNightOwl(validatedNightOwl);
+        }
+
+        setStatusMsg({ text: res.message, isError: !res.success });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'File JSON không hợp lệ';
+        setStatusMsg({ text: `Lỗi đọc file: ${msg}`, isError: true });
+      }
     };
     reader.readAsText(file);
+    // Reset file input để có thể chọn lại cùng file
+    e.target.value = '';
   };
 
   const handleReset = () => {
@@ -67,19 +159,25 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn motion-reduce:animate-none">
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="backup-modal-title"
+        className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-6 animate-scaleIn motion-reduce:animate-none"
+      >
         
         <div className="flex justify-between items-center pb-4 border-b border-slate-800">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
               <ShieldCheck className="w-5 h-5" />
             </div>
-            <h3 className="text-xl font-bold text-white">Sao Lưu & Khôi Phục Dữ Liệu</h3>
+            <h3 id="backup-modal-title" className="text-xl font-bold text-white">Sao Lưu & Khôi Phục Dữ Liệu</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label="Đóng"
           >
             <X className="w-5 h-5" />
           </button>
@@ -113,7 +211,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
             </div>
             <button
               onClick={handleExportDownload}
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md shadow-emerald-500/20"
+              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none shadow-md shadow-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             >
               Tải về
             </button>
@@ -130,7 +228,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
             </div>
             <button
               onClick={handleCopyClipboard}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1"
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : null}
               <span>{copied ? 'Đã sao chép!' : 'Copy'}</span>
@@ -156,7 +254,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
             />
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all shadow-md shadow-amber-500/20"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none shadow-md shadow-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             >
               Chọn file
             </button>

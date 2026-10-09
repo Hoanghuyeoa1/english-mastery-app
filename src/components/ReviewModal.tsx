@@ -16,7 +16,7 @@ import {
   HelpCircle,
   RefreshCw
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
 import { speakWord } from '../services/speechService';
 import { 
@@ -206,16 +206,9 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
         if (remaining.length === 0) {
           // Hoàn thành toàn bộ thẻ trong phiên ôn!
-          try {
-            confetti({
-              particleCount: 90,
-              spread: 70,
-              origin: { y: 0.6 },
-              colors: ['#10B981', '#06B6D4', '#F59E0B', '#8B5CF6'],
-            });
-          } catch {
-            // ignore
-          }
+          triggerCelebration('completion', {
+            colors: ['#10B981', '#06B6D4', '#F59E0B', '#8B5CF6'],
+          });
           setStep('completed');
           return [];
         }
@@ -224,6 +217,18 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
       }
     });
   }, [processReview, selectedMode]);
+
+  // Global Escape key listener to close modal
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Keyboard shortcut listener
   useEffect(() => {
@@ -265,10 +270,15 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   const currentProgressPercent = initialTotalCount > 0 ? Math.round((completedCount / initialTotalCount) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/85 backdrop-blur-md animate-fadeIn motion-reduce:animate-none">
       
       {/* Modal Container */}
-      <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-modal-title"
+        className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-scaleIn motion-reduce:animate-none"
+      >
         
         {/* Header Bar */}
         <div className="flex items-center justify-between px-5 sm:px-7 py-4 border-b border-slate-800/80 bg-slate-950/60 shrink-0">
@@ -277,7 +287,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
               <Brain className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-white flex items-center gap-2">
+              <h2 id="review-modal-title" className="text-base sm:text-lg font-black text-white flex items-center gap-2">
                 <span>Trung Tâm Ôn Tập</span>
                 <span className="text-[10px] px-2 py-0.5 bg-emerald-500/15 text-emerald-300 font-bold rounded-full border border-emerald-500/30">
                   SRS Spaced Repetition
@@ -299,7 +309,8 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded-xl border border-slate-700/60 transition-colors"
+            className="p-2 text-slate-400 hover:text-white bg-slate-800/60 hover:bg-slate-800 rounded-xl border border-slate-700/60 transition-colors duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label="Đóng"
           >
             <X className="w-5 h-5" />
           </button>

@@ -11,7 +11,7 @@ import {
   Trash2,
   HelpCircle
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
 import { VocabTag, VocabWord } from '../types';
 
@@ -42,6 +42,17 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
   const [parsedRows, setParsedRows] = useState<ParsedWordRow[]>([]);
   const [defaultTag, setDefaultTag] = useState<VocabTag>('IELTS');
   const [importStatus, setImportStatus] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -158,11 +169,7 @@ Procrastinate,/prəʊˈkræs.tɪ.neɪt/,Trì hoãn công việc,"Do not procrast
       }))
     );
 
-    confetti({
-      particleCount: 100,
-      spread: 80,
-      origin: { y: 0.6 },
-    });
+    triggerCelebration('completion');
 
     setImportStatus(`Đã thêm thành công ${addedCount} từ vựng mới vào kho!`);
     setTimeout(() => {
@@ -173,8 +180,13 @@ Procrastinate,/prəʊˈkræs.tɪ.neɪt/,Trì hoãn công việc,"Do not procrast
   const validCount = parsedRows.filter((r) => r.isValid).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn motion-reduce:animate-none">
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bulk-import-modal-title"
+        className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto animate-scaleIn motion-reduce:animate-none"
+      >
         
         {/* Header */}
         <div className="flex justify-between items-center pb-4 border-b border-slate-800">
@@ -183,13 +195,14 @@ Procrastinate,/prəʊˈkræs.tɪ.neɪt/,Trì hoãn công việc,"Do not procrast
               <UploadCloud className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-white">Nhập Hàng Loạt Từ Vựng (Bulk CSV)</h3>
+              <h3 id="bulk-import-modal-title" className="text-xl font-bold text-white">Nhập Hàng Loạt Từ Vựng (Bulk CSV)</h3>
               <p className="text-xs text-slate-400">Thêm nhanh hàng chục hoặc hàng trăm từ vựng cùng lúc</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label="Đóng"
           >
             <X className="w-5 h-5" />
           </button>

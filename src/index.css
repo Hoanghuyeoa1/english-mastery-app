@@ -150,3 +150,32 @@
 .animate-vip-glow {
   animation: vip-neon-glow 2.8s ease-in-out infinite;
 }
+
+/* ========================================================================= */
+/* ACCESSIBLE FADE-IN & MICRO-INTERACTION FOUNDATIONS (PHASE 1)              */
+/* ========================================================================= */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn,
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeIn,
+  .animate-fade-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

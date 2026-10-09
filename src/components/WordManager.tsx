@@ -16,6 +16,7 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { useIsAdmin } from '../utils/adminAuth';
 import { speakWord } from '../services/speechService';
+import { syncCloudVocabulariesToStore } from '../services/adminVocabService';
 import { VocabTag, CEFRLevel } from '../types';
 
 interface WordManagerProps {
@@ -33,7 +34,6 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
   const { 
     vocabularyList, 
     deleteWord, 
-    syncVocab5000, 
     audioVoice, 
     audioSpeed, 
     toggleFavorite 
@@ -94,8 +94,8 @@ export const WordManager: React.FC<WordManagerProps> = ({ onOpenAddWord, onOpenB
     return filteredWords.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredWords, validCurrentPage]);
 
-  const handleManualSync = () => {
-    const count = syncVocab5000();
+  const handleManualSync = async () => {
+    const count = await syncCloudVocabulariesToStore();
     setSyncNotice(count > 0 ? `Đã đồng bộ thêm ${count} từ mới vào kho!` : `Kho từ vựng đã có đủ ${vocabularyList.length} từ!`);
     setTimeout(() => setSyncNotice(null), 3500);
   };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   X, 
@@ -14,12 +14,22 @@ import {
   AlertTriangle,
   Crown,
   Zap,
-  Shield
+  Shield,
+  Brain,
+  Lock
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
+import { useCloudSyncStore } from '../services/cloudSyncService';
+import { 
+  LEADERBOARD_FRAMES, 
+  FrameId, 
+  getUserUnlockedFrames, 
+  equipProfileFrameOnServer 
+} from '../services/frameRewardService';
 import { UserAvatar, UserRankBadge } from './UserProfileBadge';
 import { getUserRankInfo } from '../utils/userRank';
+import { SRSAlgorithmType } from '../types';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -28,21 +38,98 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onOpenBackup }) => {
+  const { user } = useCloudSyncStore();
   const { 
     profile, 
     setProfileName, 
     setDailyNewWordsLimit, 
     exportBackupData, 
     importBackupData, 
-    resetToDefault 
+    resetToDefault,
+    srsAlgorithm,
+    fsrsSettings,
+    setSRSAlgorithm,
+    setFSRSSettings,
+    setEquippedFrame,
+    setUnlockedFrames,
   } = useAppStore();
 
   const [newName, setNewName] = useState(profile.name || '');
   const [dailyLimit, setDailyLimit] = useState(profile.targetDailyNewWords || 15);
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState<SRSAlgorithmType>(srsAlgorithm || 'fsrs');
+  const [selectedRetention, setSelectedRetention] = useState<number>(
+    Math.round((fsrsSettings?.desiredRetention || 0.9) * 100)
+  );
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
+  const [frameLoading, setFrameLoading] = useState(false);
+  const [frameFeedback, setFrameFeedback] = useState<string | null>(null);
 
   const userRank = getUserRankInfo(profile.level);
+
+  // Đồng bộ danh sách khung đã mở khóa khi mở modal
+  useEffect(() => {
+    if (!isOpen) return;
+    let isCancelled = false;
+
+    async function syncFrames() {
+      if (user?.id) {
+        const unlocked = await getUserUnlockedFrames(user.id);
+        if (!isCancelled && unlocked.length > 0) {
+          setUnlockedFrames(unlocked);
+        }
+      }
+    }
+
+    void syncFrames();
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOpen, user?.id, setUnlockedFrames]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  const handleToggleFrame = async (frameId: FrameId) => {
+    const isCurrentlyEquipped = profile.equippedFrame === frameId;
+    const nextFrameId = isCurrentlyEquipped ? null : frameId;
+
+    // Check ownership locally
+    const owned = (profile.unlockedFrames || []).includes(frameId);
+    if (nextFrameId && !owned) {
+      setFrameFeedback('Bạn chưa sở hữu khung vinh danh này!');
+      setTimeout(() => setFrameFeedback(null), 3000);
+      return;
+    }
+
+    setFrameLoading(true);
+    setFrameFeedback(null);
+
+    // Call server-authoritative RPC
+    const res = await equipProfileFrameOnServer(nextFrameId);
+    setFrameLoading(false);
+
+    if (res.success) {
+      setEquippedFrame(nextFrameId);
+      if (nextFrameId) {
+        setFrameFeedback(`Đã trang bị "${LEADERBOARD_FRAMES[frameId].name}" thành công!`);
+        triggerCelebration('micro');
+      } else {
+        setFrameFeedback('Đã gỡ bỏ khung vinh danh.');
+      }
+    } else {
+      setFrameFeedback(res.message || 'Không thể cập nhật khung vinh danh.');
+    }
+    setTimeout(() => setFrameFeedback(null), 3500);
+  };
 
   if (!isOpen) return null;
 
@@ -53,9 +140,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
 
     setProfileName(newName.trim(), profile.targetGoal);
     setDailyNewWordsLimit(dailyLimit);
+    setSRSAlgorithm(selectedAlgorithm);
+    if (selectedAlgorithm === 'fsrs') {
+      setFSRSSettings({ desiredRetention: selectedRetention / 100 });
+    }
 
-    setSaveStatus('Đã cập nhật thông tin hồ sơ thành công!');
-    confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+    setSaveStatus('Đã cập nhật thông tin hồ sơ và cấu hình SRS thành công!');
+    triggerCelebration('micro');
     setTimeout(() => setSaveStatus(null), 3000);
   };
 
@@ -81,8 +172,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 overflow-hidden max-h-[90vh] overflow-y-auto no-scrollbar">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fadeIn motion-reduce:animate-none">
+      <div 
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-modal-title"
+        className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 overflow-hidden max-h-[90vh] overflow-y-auto no-scrollbar animate-scaleIn motion-reduce:animate-none"
+      >
         
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-800">
@@ -91,14 +187,15 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg sm:text-xl font-black text-white">Hồ Sơ & Cài Đặt Cá Nhân</h2>
+              <h2 id="profile-modal-title" className="text-lg sm:text-xl font-black text-white">Hồ Sơ & Cài Đặt Cá Nhân</h2>
               <p className="text-xs text-slate-400">Quản lý tên hiển thị, cấp độ danh hiệu và sao lưu</p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
+            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors duration-150 active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            aria-label="Đóng"
           >
             <X className="w-5 h-5" />
           </button>
@@ -112,6 +209,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
               level={profile.level}
               size="lg"
               showLevelBadge={true}
+              equippedFrame={profile.equippedFrame}
             />
             <div className="space-y-1 text-left">
               <div className="flex items-center gap-2 flex-wrap">
@@ -194,6 +292,87 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
           </div>
         </div>
 
+        {/* Weekly Leaderboard Frames Entitlements Card */}
+        <div className="bg-slate-950/60 p-4 rounded-2xl border border-slate-800/80 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Crown className="w-4 h-4 text-amber-400" />
+              <span>Khung Vinh Danh Bảng Xếp Hạng Tuần:</span>
+            </span>
+            {profile.equippedFrame && (
+              <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/30">
+                Đang trang bị: {LEADERBOARD_FRAMES[profile.equippedFrame as FrameId]?.name || profile.equippedFrame}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {(Object.values(LEADERBOARD_FRAMES) as typeof LEADERBOARD_FRAMES[FrameId][]).map((frame) => {
+              const isOwned = (profile.unlockedFrames || []).includes(frame.id);
+              const isEquipped = profile.equippedFrame === frame.id;
+
+              return (
+                <div
+                  key={frame.id}
+                  className={`p-3 rounded-xl border flex flex-col justify-between transition-all ${
+                    isEquipped
+                      ? 'bg-amber-500/15 border-amber-400 shadow-md ring-1 ring-amber-400'
+                      : isOwned
+                      ? 'bg-slate-900/80 border-slate-700/80 hover:border-slate-650'
+                      : 'bg-slate-950/40 border-slate-850 opacity-60'
+                  }`}
+                >
+                  <div className="space-y-1.5 mb-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                        frame.rank === 1 ? 'bg-amber-400 text-slate-950' :
+                        frame.rank === 2 ? 'bg-slate-300 text-slate-950' :
+                        'bg-amber-700 text-white'
+                      }`}>
+                        {frame.badgeText}
+                      </span>
+                      {isEquipped && (
+                        <Check className="w-3.5 h-3.5 text-amber-400" />
+                      )}
+                    </div>
+                    <div className="text-xs font-bold text-white pt-0.5">{frame.name}</div>
+                    <div className="text-[10px] text-slate-400 leading-tight">{frame.description}</div>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80">
+                    {isOwned ? (
+                      <button
+                        type="button"
+                        disabled={frameLoading}
+                        onClick={() => handleToggleFrame(frame.id)}
+                        className={`w-full py-1.5 text-xs font-bold rounded-lg transition-all ${
+                          isEquipped
+                            ? 'bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40'
+                            : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm'
+                        }`}
+                      >
+                        {isEquipped ? 'Gỡ bỏ' : 'Trang bị'}
+                      </button>
+                    ) : (
+                      <div className="flex items-center justify-center gap-1 py-1 text-[10px] text-slate-500 font-medium">
+                        <Lock className="w-3 h-3" />
+                        <span>Chưa sở hữu</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {frameFeedback && (
+            <div className="p-2.5 bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 rounded-xl text-xs font-semibold flex items-center gap-2 animate-fade-in">
+              <Sparkles className="w-3.5 h-3.5 shrink-0" />
+              <span>{frameFeedback}</span>
+            </div>
+          )}
+        </div>
+
         {/* Edit Profile Form */}
         <form onSubmit={handleSaveProfile} className="space-y-4">
           
@@ -232,6 +411,106 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
             </div>
           </div>
 
+          {/* Thuật toán Ghi nhớ & Giãn cách (Spaced Repetition) */}
+          <div className="space-y-3 pt-3 border-t border-slate-800">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 block uppercase tracking-wider flex items-center gap-1.5">
+                <Brain className="w-4 h-4 text-teal-400" />
+                <span>Thuật toán Ghi nhớ & Giãn cách (Spaced Repetition):</span>
+              </label>
+              <span className="text-[10px] font-mono text-teal-400 font-bold">
+                {selectedAlgorithm === 'fsrs' ? 'FSRS v4.5' : 'SuperMemo 2'}
+              </span>
+            </div>
+
+            {/* Segmented Control / Radio Options */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedAlgorithm('fsrs')}
+                className={`p-3 rounded-2xl border text-left transition-all relative ${
+                  selectedAlgorithm === 'fsrs'
+                    ? 'bg-gradient-to-r from-teal-500/15 to-emerald-500/10 border-teal-500/80 shadow-md ring-1 ring-teal-500/40'
+                    : 'bg-slate-950 hover:bg-slate-850 border-slate-800 opacity-70 hover:opacity-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>⚡</span>
+                    <span>FSRS v4.5</span>
+                  </span>
+                  {selectedAlgorithm === 'fsrs' && (
+                    <div className="w-4 h-4 rounded-full bg-teal-400 text-slate-950 flex items-center justify-center">
+                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-teal-300 mt-1 font-medium">
+                  Khuyến nghị - Tối ưu ghi nhớ
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectedAlgorithm('sm2')}
+                className={`p-3 rounded-2xl border text-left transition-all relative ${
+                  selectedAlgorithm === 'sm2'
+                    ? 'bg-gradient-to-r from-emerald-500/15 to-teal-500/10 border-emerald-500/80 shadow-md ring-1 ring-emerald-500/40'
+                    : 'bg-slate-950 hover:bg-slate-850 border-slate-800 opacity-70 hover:opacity-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>🧠</span>
+                    <span>SuperMemo 2</span>
+                  </span>
+                  {selectedAlgorithm === 'sm2' && (
+                    <div className="w-4 h-4 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center">
+                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Cổ điển
+                </p>
+              </button>
+            </div>
+
+            {/* Slider for Desired Retention (Only when FSRS is selected) */}
+            {selectedAlgorithm === 'fsrs' && (
+              <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-300">
+                    Mục tiêu ghi nhớ (Desired Retention):
+                  </span>
+                  <span className="px-2 py-0.5 rounded-lg bg-teal-500/20 border border-teal-500/40 font-mono font-bold text-teal-300 text-xs">
+                    {selectedRetention}%
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="70"
+                  max="97"
+                  step="1"
+                  value={selectedRetention}
+                  onChange={(e) => setSelectedRetention(parseInt(e.target.value, 10))}
+                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                />
+
+                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                  <span>70%</span>
+                  <span className="text-teal-400 font-semibold">90% (Khuyến nghị)</span>
+                  <span>97%</span>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed italic bg-slate-900/60 p-2 rounded-xl border border-slate-800/80">
+                  💡 Mức ghi nhớ càng cao sẽ yêu cầu tần suất ôn tập dày hơn. Khuyến nghị: 85% - 90%.
+                </p>
+              </div>
+            )}
+          </div>
+
           <button
             type="submit"
             className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
@@ -251,7 +530,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
         {/* Data Portability & Reset Area */}
         <div className="space-y-3 pt-4 border-t border-slate-800">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-            Dữ liệu & Chuyển đổi thiết bị:
+            Sao lưu & Dữ liệu Cục bộ (JSON):
           </span>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">

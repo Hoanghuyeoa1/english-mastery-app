@@ -1,0 +1,185 @@
+Có. Sau khi đọc trạng thái hiện tại của dự án, mình nghĩ **English Mastery Hub đã đủ rộng về số lượng module**; giai đoạn tới nên ưu tiên làm cho các module hiện có **sâu hơn, liên kết với nhau tốt hơn và tạo bằng chứng học tập đáng tin cậy hơn**, thay vì tiếp tục thêm hàng loạt màn hình độc lập. Hiện hệ thống đã có Session Experience + Next Best Action khép kín trên 9 module, Today Hub, Continuity, Personalized Insights, AI Tutor, TOEIC, Four Skills và SRS. README
+
+Mình sẽ xếp như sau:
+
+| Ưu tiên | Chức năng đề xuất | Loại | Vì sao đáng làm |
+|---|---|---|---|
+| ⭐⭐⭐⭐⭐ | **1. CEFR Mastery / Level Certification Engine** | Mới | Hiện Learning Journey cố ý **không dùng `mastered`** vì chưa có bằng chứng năng lực độc lập. Đây là khoảng trống rất rõ. Xây checkpoint A1→C2 dựa trên Reading + Listening + Speaking + Writing để người học thực sự “vượt cấp”. |
+| ⭐⭐⭐⭐⭐ | **2. Personal Learning Analytics 7/30/90 ngày** | Mới | App đã thu rất nhiều evidence nhưng phần lớn dùng cho Today Plan, Insights và Leaderboard. Nên có dashboard cá nhân cho thấy retention, từ đã mastered, mistake giảm, CEFR skill trend, TOEIC trend, active learning time. |
+| ⭐⭐⭐⭐⭐ | **3. Event-based Cloud Sync** | Hoàn thiện kiến trúc | Chính chức năng vừa bàn. Cloud Sync hiện đã Local-First, retry/coalescing, race protection rất mạnh; bước tiếp theo hợp lý là incremental event outbox + snapshot fallback. CHANGELOG |
+| ⭐⭐⭐⭐⭐ | **4. Writing Revision Loop** | Hoàn thiện | Writing hiện đã chấm CEFR, Essay Diff và đưa lỗi/collocation vào Mistake Bank. Nên phát triển thành `Draft → Feedback → Rewrite → Compare → Improvement Evidence`, thay vì chấm xong là kết thúc. README |
+| ⭐⭐⭐⭐⭐ | **5. TOEIC Adaptive Weak-Part Training** | Hoàn thiện | Next Action hiện đã phát hiện Part <70% và route sang luyện bổ trợ. Bước tiếp theo là biến nó thành vòng `Mock → Weak Part → Targeted Practice → Re-test → Improvement`, dùng Question Bank hiện có chứ không tạo recommendation engine khác. |
+| ⭐⭐⭐⭐ | **6. TOEIC Listening Engine nâng cao** | Hoàn thiện | Tái sử dụng transcript segmentation, seek, highlight, playback state từ Listening Lab để Part 1–4 có audio/session engine chuyên nghiệp hơn, thay vì TOEIC chỉ mạnh ở phần assessment. |
+| ⭐⭐⭐⭐ | **7. Mistake Lifecycle 2.0** | Hoàn thiện | Không chỉ `created/resolved`, mà theo dõi `detected → reinforced → retested → resolved → relapsed`. Điều này sẽ kết nối Mistake Bank, SRS, Writing, Tutor, TOEIC thành một vòng sửa lỗi thật sự. |
+| ⭐⭐⭐⭐ | **8. Vocabulary Active-Mastery Engine** | Mới | Hiện SRS đo khả năng nhớ từ khá tốt. Có thể bổ sung mức cao hơn: “nhớ được” ≠ “dùng được”, dựa vào Reading encounters + Writing usages + Speaking/Tutor evidence để phân biệt Passive / Recall / Active mastery. |
+| ⭐⭐⭐⭐ | **9. AI Tutor Goal/Mission Sessions** | Hoàn thiện | Tutor hiện là open conversation và cố ý không fake progress. Có thể thêm session có objective thật như “dùng đúng 5 collocations”, “sửa 3 lỗi đang active”, “business negotiation B2”, với completion dựa trên evidence. AI Tutor hiện đã có closed-loop đủ tốt để làm nền. README |
+| ⭐⭐⭐⭐ | **10. Learning Plan theo tuần** | Mới | Today Hub hiện rất mạnh cho từng ngày. Có thể thêm Weekly Learning Plan nhưng chỉ là tầng orchestration phía trên Today Plan: mục tiêu tuần, workload forecast, skill balance, không tạo scheduler thứ hai. |
+| ⭐⭐⭐⭐ | **11. Smart Offline Content Download** | Hoàn thiện PWA | Cho người dùng tải trước một CEFR level / Listening pack / TOEIC practice pack, quản lý quota và xóa cache. Phù hợp trực tiếp với triết lý Local-First/PWA của app. |
+| ⭐⭐⭐⭐ | **12. Runtime Health & Observability** | Hạ tầng | App đã có hơn 2.500 automated tests nhưng khi production lỗi sync/storage/API rất khó nhìn. Nên có internal telemetry: sync failures, storage size, AI fallback rate, speech unsupported rate, stale activities, event outbox. |
+| ⭐⭐⭐ | **13. Persisted State Schema Migration Engine** | Hạ tầng | Khi Zustand, Continuity, Cloud Snapshot và Event Sync cùng phát triển, cần `schemaVersion + migrations` chuẩn để user update app không mất dữ liệu cũ. |
+| ⭐⭐⭐ | **14. Content Registry + Dataset Validation Pipeline** | Hạ tầng nội dung | Four Skills đã đạt 96 bài. Nếu tiếp tục tăng TOEIC/Four Skills thì không nên quản lý bằng các file dữ liệu rời rạc mãi. Nên có schema chung, ID registry, duplicate detection, dataset integrity validator. |
+| ⭐⭐⭐ | **15. Skill Evidence Ledger** | Mới | Tạo một lớp **read-only evidence aggregation**, không phải state mới: “vì sao hệ thống cho rằng Listening B1 = 68%?”, liên kết các attempt thật từ Four Skills, TOEIC, Mistake, Tutor. Đây sẽ là nền cho Mastery Engine và Analytics. |
+
+### 5 chức năng mình ưu tiên nhất
+
+Nếu phát triển tiếp ngay, mình sẽ làm theo thứ tự:
+
+**1 → CEFR Mastery / Level Certification Engine**
+
+Đây là khoảng trống kiến trúc rõ nhất. Trong Learning Journey hiện tại, hệ thống cố ý không gắn `mastered` vì chưa có independent mastery evidence; completion và competency cũng đã được tách riêng. CHANGELOG
+
+Nó có thể tạo vòng:
+
+```text
+Learning Journey
+      ↓
+Practice A1
+      ↓
+Skill Evidence
+      ↓
+A1 Checkpoint
+      ↓
+Reading + Listening + Speaking + Writing
+      ↓
+Pass / Needs Reinforcement
+      ↓
+Mastery Evidence
+      ↓
+A2
+```
+
+Đây sẽ khiến A1→C2 trở thành **một lộ trình thực sự**, không chỉ là danh sách 96 bài.
+
+--- Đang Làm
+
+**2 → Personal Learning Analytics**
+
+Bạn đang có rất nhiều dữ liệu tốt:
+
+```text
+FSRS stability / retrievability
+Mistake Bank
+Leech
+Active Minutes
+Review Consistency
+TOEIC Gain
+Pronunciation Gain
+Four Skills competency
+Writing usage
+Reading encounters
+```
+
+Leaderboard thậm chí đã sử dụng 7 chiều học tập khác nhau. README
+
+Nhưng người học cũng nên thấy:
+
+```text
+30 ngày qua
+Vocabulary mastery       +84
+Retention               82% → 89%
+Active mistakes          21 → 11
+Reading                  62 → 71
+Listening                55 → 66
+Writing                  58 → 64
+Speaking                 61 → 70
+TOEIC                    610 → 715
+```
+
+Không phải để gamification mà để thấy **mình thật sự tiến bộ ở đâu**.
+----------     Đang làm
+
+**3 → Writing Revision Loop**
+
+Đây là một trong những nâng cấp có giá trị học tập cao nhất.
+
+Hiện tại:
+
+```text
+Write
+→ Submit
+→ AI Grade
+→ Feedback
+→ Mistake Bank
+```
+
+Nên thành:
+
+```text
+Draft 1
+  ↓
+AI / Evidence Feedback
+  ↓
+Targeted corrections
+  ↓
+Draft 2
+  ↓
+Diff
+  ↓
+Did learner actually fix the mistake?
+  ↓
+Improvement Evidence
+  ↓
+Mistake resolved / still active
+```
+
+Khi đó Writing không còn chỉ là **máy chấm bài**, mà trở thành **hệ thống dạy viết**.
+
+**4 → TOEIC Adaptive Training Loop**
+
+Không cần thêm một hệ thống gợi ý mới vì bạn đã có Next Best Action hierarchy và nó đã hiểu TOEIC weak part. README
+
+Chỉ cần mở rộng:
+
+```text
+Full Mock
+   ↓
+Part 5 = 91%
+Part 6 = 84%
+Part 7 = 58%
+   ↓
+Weakness Evidence: Part 7
+   ↓
+Targeted Part 7 Practice
+   ↓
+10–20 questions
+   ↓
+Re-test
+   ↓
+58% → 74%
+   ↓
+Update evidence
+```
+
+Cái này làm TOEIC có cảm giác **học thích ứng thực sự**.
+
+**5 → Event-based Cloud Sync**
+
+Nó không tạo nhiều thứ người dùng nhìn thấy ngay, nhưng khi hệ thống ngày càng lớn thì nó giúp tránh Cloud Sync trở thành một khối merge state khổng lồ. Hướng hybrid mà chúng ta vừa thiết kế là phù hợp vì hiện sync đã có local-first commit, single connectivity listener, coalescing, retry và race protection. CHANGELOG
+
+---
+
+Nếu xét theo **giá trị sản phẩm**, mình cho rằng hướng phát triển mạnh nhất từ đây là:
+
+```text
+CEFR Journey
+      ↓
+Mastery Checkpoint
+      ↓
+Evidence Engine
+      ↓
+Personal Analytics
+      ↓
+Today Learning Plan
+      ↓
+Learning Session
+      ↓
+Mistake / Improvement Evidence
+      ↓
+Next Best Action
+      ↓
+Mastery Checkpoint
+```
+
+Khi vòng này khép kín, English Mastery Hub sẽ chuyển từ **“một app có rất nhiều tính năng học tiếng Anh”** thành **“một hệ thống thực sự biết người dùng đang ở đâu, yếu gì, nên học gì tiếp và có thực sự tiến bộ hay không.”**
+
+Trong số các ý tưởng trên, **mình khuyên nhiệm vụ tiếp theo là `CEFR Mastery / Level Certification Engine`**. Đây là mảnh ghép còn thiếu hợp lý nhất với kiến trúc hiện tại và tận dụng gần như toàn bộ Four Skills, Competency, Learning Journey, Today Hub và Personalized Insights mà bạn đã xây.

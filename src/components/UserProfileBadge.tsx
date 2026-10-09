@@ -1,6 +1,7 @@
 import React from 'react';
 import { Shield, Zap, Crown, Sparkles, Flame } from 'lucide-react';
 import { getUserRankInfo, UserRankTier } from '../utils/userRank';
+import { getFrameDefinition } from '../services/frameRewardService';
 
 interface UserAvatarProps {
   name: string;
@@ -9,6 +10,7 @@ interface UserAvatarProps {
   showLevelBadge?: boolean;
   className?: string;
   onClick?: () => void;
+  equippedFrame?: string | null;
 }
 
 export const UserAvatar: React.FC<UserAvatarProps> = ({
@@ -18,8 +20,10 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
   showLevelBadge = true,
   className = '',
   onClick,
+  equippedFrame = null,
 }) => {
   const rank = getUserRankInfo(level);
+  const frameDef = equippedFrame ? getFrameDefinition(equippedFrame) : null;
   const initial = name ? name.charAt(0).toUpperCase() : 'U';
 
   const sizeClasses = {
@@ -50,10 +54,12 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
       onClick={onClick}
       className={`relative inline-flex items-center justify-center shrink-0 cursor-pointer select-none group ${className}`}
     >
-      {/* Outer Glow Halo for Mythic / Master / VIP */}
+      {/* Outer Glow Halo for Frame or Mythic / Master / VIP */}
       <div 
         className={`absolute -inset-1 rounded-2xl opacity-60 blur-sm transition-opacity group-hover:opacity-100 ${
-          rank.tier === 'mythic'
+          frameDef
+            ? frameDef.haloClasses
+            : rank.tier === 'mythic'
             ? 'bg-gradient-to-r from-fuchsia-600 via-rose-500 to-amber-400 animate-pulse'
             : rank.tier === 'master'
             ? 'bg-gradient-to-r from-amber-500 to-yellow-300'
@@ -65,11 +71,13 @@ export const UserAvatar: React.FC<UserAvatarProps> = ({
 
       {/* Main Avatar Container */}
       <div 
-        className={`relative ${sizeClasses.outer} ${rank.avatarWrapperClass} ${rank.avatarRingClass} flex items-center justify-center transition-all duration-300 group-hover:scale-105`}
+        className={`relative ${sizeClasses.outer} ${rank.avatarWrapperClass} ${
+          frameDef ? frameDef.borderClasses : rank.avatarRingClass
+        } flex items-center justify-center transition-all duration-300 group-hover:scale-105`}
       >
-        {/* Rotating border effect for Mythic 50+ */}
-        {rank.isRotatingBorder && (
-          <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-rose-500 to-amber-400 animate-spin-reverse opacity-90 pointer-events-none" />
+        {/* Rotating border effect for Frame or Mythic 50+ */}
+        {(frameDef?.isRotating || rank.isRotatingBorder) && (
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-amber-400 via-rose-500 to-amber-300 animate-spin-reverse opacity-90 pointer-events-none" />
         )}
 
         {/* Inner Avatar Box */}

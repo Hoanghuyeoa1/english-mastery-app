@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Volume2, Shuffle, Lightbulb, RotateCcw, CheckCircle2, Flame } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { speakWord } from '../services/speechService';
 import { cleanMeaningForScramble } from '../services/textSanitizer';
-import { VocabWord } from '../types';
+import { VocabWord, MistakeResolutionEvent, AdaptiveDifficultyTier } from '../types';
 import { useAppStore } from '../store/useAppStore';
 
 export interface LetterItem {
@@ -21,6 +21,10 @@ interface WordScrambleProps {
   onIncrementStreak?: () => void;
   audioVoice?: 'en-US' | 'en-GB';
   audioSpeed: number;
+  onMistakeResult?: (event: MistakeResolutionEvent) => void;
+  difficultyTier?: AdaptiveDifficultyTier;
+  distractorLettersCount?: number;
+  revealFirstLetter?: boolean;
 }
 
 export const WordScramble: React.FC<WordScrambleProps> = ({
@@ -29,8 +33,12 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
   onIncrementStreak,
   audioVoice,
   audioSpeed,
+  onMistakeResult,
+  difficultyTier,
+  distractorLettersCount,
+  revealFirstLetter,
 }) => {
-  const { recordMistake, recordMistakeCorrect } = useAppStore();
+  const { recordQuizMistakeResult, activePracticeConfig, clearAdaptivePractice } = useAppStore();
   const [currentVocab, setCurrentVocab] = useState<VocabWord | null>(null);
   const [targetWord, setTargetWord] = useState<string>('');
   const [availableLetters, setAvailableLetters] = useState<LetterItem[]>([]);
@@ -50,7 +58,26 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
     const candidatePool = validSingleWords.length > 0 ? validSingleWords : vocabPool;
     if (candidatePool.length === 0) return;
 
-    const selectedVocab = vocabOverride || candidatePool[Math.floor(Math.random() * candidatePool.length)];
+    let selectedVocab = vocabOverride;
+    if (!selectedVocab && activePracticeConfig?.module === 'word_scramble' && activePracticeConfig.itemIds?.length) {
+      for (const rawId of activePracticeConfig.itemIds) {
+        const cleanTarget = rawId.trim().toLowerCase();
+        // 1. Khớp theo ID trước để chống trùng từ
+        selectedVocab = candidatePool.find((w) => w.id?.toLowerCase() === cleanTarget)
+          || vocabPool.find((w) => w.id?.toLowerCase() === cleanTarget);
+        // 2. Fallback sang khớp theo word
+        if (!selectedVocab) {
+          selectedVocab = candidatePool.find((w) => w.word.toLowerCase() === cleanTarget)
+            || vocabPool.find((w) => w.word.toLowerCase() === cleanTarget);
+        }
+        if (selectedVocab) break;
+      }
+      clearAdaptivePractice();
+    }
+
+    if (!selectedVocab) {
+      selectedVocab = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+    }
     if (!selectedVocab) return;
 
     // 1. LẤY TRỌN VẸN 100% TỪ MỤC TIÊU (Giữ nguyên vẹn toàn bộ các ký tự như RESILIENCE, JUSTIFY, YIELD)
@@ -66,9 +93,11 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
       isDistractor: false,
     }));
 
-    // 3. Thêm từ 2 - 3 chữ cái ngẫu nhiên làm nhiễu (Distractors)
+    // 3. Thêm chữ cái ngẫu nhiên làm nhiễu (Distractors) theo độ khó
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const distractorCount = Math.min(3, Math.max(2, Math.floor(cleanWord.length / 4)));
+    const distractorCount = typeof distractorLettersCount === 'number'
+      ? distractorLettersCount
+      : Math.min(3, Math.max(2, Math.floor(cleanWord.length / 4)));
     const distractorLetters: LetterItem[] = [];
     for (let i = 0; i < distractorCount; i++) {
       const randomChar = alphabet[Math.floor(Math.random() * alphabet.length)];
@@ -82,6 +111,12 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
     }
 
     // 4. Xáo trộn toàn bộ mảng chữ cái gồm (100% chữ cái mục tiêu + chữ cái nhiễu)
+    const initialSlots: (LetterItem | null)[] = new Array(cleanWord.length).fill(null);
+    if (revealFirstLetter && targetLetters.length > 0) {
+      targetLetters[0].isUsed = true;
+      initialSlots[0] = targetLetters[0];
+    }
+
     const allLetters = [...targetLetters, ...distractorLetters];
     let shuffled = [...allLetters].sort(() => Math.random() - 0.5);
 
@@ -89,15 +124,18 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
     setCurrentVocab({ ...selectedVocab, word: cleanWord, meaning: cleanMeaning });
     setTargetWord(cleanWord);
     setAvailableLetters(shuffled);
-    setUserSlots(new Array(cleanWord.length).fill(null)); // Số ô vuông phía trên BẮT BUỘC bằng đúng targetWord.length
+    setUserSlots(initialSlots); // Số ô vuông phía trên BẮT BUỘC bằng đúng targetWord.length
     setIsSuccess(false);
     setIsError(false);
-  }, [vocabPool]);
+  }, [vocabPool, distractorLettersCount, revealFirstLetter]);
 
   // Khởi tạo ván chơi ngay khi component mount hoặc khi vocabPool thay đổi
   useEffect(() => {
     if (!currentVocab && vocabPool.length > 0) {
-      loadNewWord();
+      const timer = setTimeout(() => {
+        loadNewWord();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [currentVocab, vocabPool, loadNewWord]);
 
@@ -127,13 +165,17 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
         // ĐÚNG CHÍNH TẢ!
         setIsSuccess(true);
         if (currentVocab) {
-          recordMistakeCorrect(currentVocab.id || currentVocab.word);
+          const event = recordQuizMistakeResult(currentVocab.id || currentVocab.word, true, {
+            source: 'word_scramble',
+            type: 'spelling',
+          });
+          onMistakeResult?.(event);
         }
         speakWord(targetWord, audioVoice, audioSpeed);
         onGainXP(20);
         onIncrementStreak?.();
         setStreak((prev) => prev + 1);
-        confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+        triggerCelebration('micro');
 
         setTimeout(() => {
           loadNewWord();
@@ -142,18 +184,26 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
         // SAI CHÍNH TẢ!
         setIsError(true);
         if (currentVocab) {
-          recordMistake(currentVocab, 'scramble');
+          const event = recordQuizMistakeResult(currentVocab.id || currentVocab.word, false, {
+            source: 'word_scramble',
+            type: 'spelling',
+            userAnswer: spelledWord,
+            expectedAnswer: targetWord,
+            context: currentVocab.example || currentVocab.example_en,
+          });
+          onMistakeResult?.(event);
         }
         setTimeout(() => {
           setIsError(false);
         }, 650);
       }
     }
-  }, [userSlots, targetWord, isSuccess, currentVocab, audioVoice, audioSpeed, onGainXP, onIncrementStreak, recordMistake, recordMistakeCorrect, loadNewWord]);
+  }, [userSlots, targetWord, isSuccess, currentVocab, audioVoice, audioSpeed, onGainXP, onIncrementStreak, recordQuizMistakeResult, onMistakeResult, loadNewWord]);
 
   // 3. GỠ CHỮ CÁI KHỎI Ô TRỐNG (REMOVE LETTER FROM SLOT)
   const handleRemoveSlot = useCallback((slotIndex: number) => {
     if (isSuccess) return;
+    if (revealFirstLetter && slotIndex === 0) return;
     const itemInSlot = userSlots[slotIndex];
     if (!itemInSlot) return;
 
@@ -166,7 +216,7 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
     setAvailableLetters((prev) =>
       prev.map((l) => (l.id === itemInSlot.id ? { ...l, isUsed: false } : l))
     );
-  }, [userSlots, isSuccess]);
+  }, [userSlots, isSuccess, revealFirstLetter]);
 
   // 4. GỢI Ý 1 CHỮ CÁI CHÍNH XÁC (HINT)
   const handleHint = useCallback(() => {
@@ -194,9 +244,21 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
   // 5. XÓA TOÀN BỘ ĐỂ LÀM LẠI (RESET CURRENT SLOTS)
   const handleResetSlots = useCallback(() => {
     if (isSuccess || !targetWord) return;
-    setUserSlots(new Array(targetWord.length).fill(null));
+    const initialSlots: (LetterItem | null)[] = new Array(targetWord.length).fill(null);
+    if (revealFirstLetter && availableLetters.length > 0) {
+      const firstTarget = availableLetters.find((l) => l.originalIndex === 0 && !l.isDistractor);
+      if (firstTarget) {
+        initialSlots[0] = firstTarget;
+        setAvailableLetters((prev) =>
+          prev.map((l) => (l.id === firstTarget.id ? { ...l, isUsed: true } : { ...l, isUsed: false }))
+        );
+        setUserSlots(initialSlots);
+        return;
+      }
+    }
+    setUserSlots(initialSlots);
     setAvailableLetters((prev) => prev.map((l) => ({ ...l, isUsed: false })));
-  }, [targetWord, isSuccess]);
+  }, [targetWord, isSuccess, revealFirstLetter, availableLetters]);
 
   // 6. LẮNG NGHE BÀN PHÍM (KEYBOARD TYPING SUPPORT)
   useEffect(() => {
@@ -235,6 +297,21 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [userSlots, availableLetters, isSuccess, handlePickLetter, handleRemoveSlot]);
+
+  const handleSkipWord = useCallback(() => {
+    if (currentVocab) {
+      const currentAttempt = userSlots.map((s) => s?.char || '').join('');
+      const event = recordQuizMistakeResult(currentVocab.id || currentVocab.word, false, {
+        source: 'word_scramble',
+        type: 'spelling',
+        userAnswer: currentAttempt || '(skipped)',
+        expectedAnswer: targetWord,
+        context: currentVocab.example || currentVocab.example_en,
+      });
+      onMistakeResult?.(event);
+    }
+    loadNewWord();
+  }, [currentVocab, userSlots, targetWord, recordQuizMistakeResult, onMistakeResult, loadNewWord]);
 
   if (!currentVocab || !targetWord) {
     return (
@@ -285,7 +362,7 @@ export const WordScramble: React.FC<WordScrambleProps> = ({
           </button>
 
           <button
-            onClick={() => loadNewWord()}
+            onClick={handleSkipWord}
             className="p-3 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white rounded-2xl transition-colors border border-slate-700/60 shadow-sm"
             title="Đổi từ khác (Bỏ qua)"
           >

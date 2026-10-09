@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Languages, 
   ArrowLeftRight, 
@@ -9,9 +9,11 @@ import {
   Sparkles, 
   X, 
   Lightbulb, 
-  History
+  History,
+  BookmarkPlus,
+  Brain
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
 import { speakWord } from '../services/speechService';
 import { 
@@ -20,13 +22,23 @@ import {
   TranslationResult,
   TranslationHistoryItem 
 } from '../services/aiTranslationService';
+import { AIStatusBadge } from './AIStatusBadge';
+import { GeminiKeyModal } from './GeminiKeyModal';
+import { InteractiveSourceText } from './InteractiveSourceText';
+import { VocabularyMiningPanel } from './VocabularyMiningPanel';
+import { TextQuizModal } from './TextQuizModal';
+import { analyzeSourceText, getEmptyAnalysisResult } from '../services/textAnalysisService';
+import { computeTextHash } from '../services/wordUsageTelemetry';
 
 export const TranslatorView: React.FC = () => {
   const { 
-    addCustomWord, 
+    saveToSRS, 
     audioVoice, 
     audioSpeed, 
-    geminiApiKey 
+    geminiApiKey,
+    userCollocations,
+    saveCollocationToSRS,
+    recordTranslatorEncounters
   } = useAppStore();
 
   const [sourceLang, setSourceLang] = useState<'en' | 'vi'>('en');
@@ -40,6 +52,25 @@ export const TranslatorView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [isKeyModalOpen, setIsKeyModalOpen] = useState(false);
+  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
+
+  // Interactive Source Text & CEFR State
+  const [sourceViewMode, setSourceViewMode] = useState<'edit' | 'interactive'>('interactive');
+  const [showCefrHighlight, setShowCefrHighlight] = useState(true);
+
+  // Pure deterministic text analysis on English source text
+  const textAnalysis = useMemo(() => {
+    if (sourceLang === 'en' && sourceText.trim()) {
+      try {
+        return analyzeSourceText(sourceText);
+      } catch (err) {
+        console.warn('Lỗi phân tích văn bản nguồn:', err);
+        return getEmptyAnalysisResult(sourceText);
+      }
+    }
+    return getEmptyAnalysisResult(sourceText);
+  }, [sourceText, sourceLang]);
 
   // History state
   const [historyList, setHistoryList] = useState<TranslationHistoryItem[]>(() => {
@@ -77,6 +108,15 @@ export const TranslatorView: React.FC = () => {
       );
       setTranslationResult(result);
 
+      // Telemetry: Ghi nhận encounters có giới hạn và idempotent cho từ điển học tập
+      if (sLang === 'en' && clean) {
+        try {
+          recordTranslatorEncounters?.(clean, `trans_${computeTextHash(clean)}`);
+        } catch {
+          // Telemetry must never crash translation
+        }
+      }
+
       // Thêm vào lịch sử nếu câu hợp lệ
       if (result.standard) {
         const item: TranslationHistoryItem = {
@@ -104,6 +144,67 @@ export const TranslatorView: React.FC = () => {
       console.error('Lỗi dịch thuật:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper kiểm tra cụm từ đã lưu chưa
+  const isCollocationSaved = useCallback((phraseText: string) => {
+    const clean = phraseText.trim().toLowerCase();
+    return (userCollocations || []).some((c) => c.phrase.trim().toLowerCase() === clean);
+  }, [userCollocations]);
+
+  // Danh sách cụm từ chưa lưu trong bản dịch hiện tại
+  const unsavedCollocations = useMemo(() => {
+    if (!translationResult?.collocations) return [];
+    return translationResult.collocations.filter((item) => {
+      const phrase = (item.phrase || item.term || '').trim();
+      return phrase && !isCollocationSaved(phrase);
+    });
+  }, [translationResult?.collocations, isCollocationSaved]);
+
+  // Lưu 1 cụm từ vào Flashcard SRS
+  const handleSaveCollocation = (item: { phrase?: string; term?: string; meaning: string; note?: string }) => {
+    const phrase = (item.phrase || item.term || '').trim();
+    if (!phrase) return;
+
+    const res = saveCollocationToSRS({
+      phrase,
+      meaning: item.meaning,
+      usageContext: item.note || `Văn phong: ${selectedTone}`,
+      exampleEn: sourceLang === 'en' ? sourceText : (translationResult?.standard || sourceText),
+      exampleVi: sourceLang === 'vi' ? sourceText : (translationResult?.standard || ''),
+      tags: [selectedTone, 'collocation'],
+    });
+
+    if (res.success) {
+      triggerCelebration('micro');
+      setSaveStatus(`+15 XP • Đã thêm "${phrase}" vào ôn tập Flashcard (SM-2)!`);
+      setTimeout(() => setSaveStatus(null), 3500);
+    }
+  };
+
+  // Lưu tất cả cụm từ chưa lưu vào Flashcard
+  const handleSaveAllCollocations = () => {
+    if (unsavedCollocations.length === 0) return;
+    let savedCount = 0;
+    unsavedCollocations.forEach((item) => {
+      const phrase = (item.phrase || item.term || '').trim();
+      if (!phrase) return;
+      const res = saveCollocationToSRS({
+        phrase,
+        meaning: item.meaning,
+        usageContext: item.note || `Văn phong: ${selectedTone}`,
+        exampleEn: sourceLang === 'en' ? sourceText : (translationResult?.standard || sourceText),
+        exampleVi: sourceLang === 'vi' ? sourceText : (translationResult?.standard || ''),
+        tags: [selectedTone, 'collocation'],
+      });
+      if (res.success) savedCount++;
+    });
+
+    if (savedCount > 0) {
+      triggerCelebration('completion');
+      setSaveStatus(`+${savedCount * 15} XP • Đã lưu ${savedCount} cụm từ vào Flashcard (SM-2)!`);
+      setTimeout(() => setSaveStatus(null), 4000);
     }
   };
 
@@ -174,22 +275,12 @@ export const TranslatorView: React.FC = () => {
     const vietMeaning = sourceLang === 'en' ? currentOutputText.trim() : sourceText.trim();
     const isLong = englishWord.split(/\s+/).length > 6;
 
-    addCustomWord({
-      word: englishWord,
-      ipa: '/.../',
-      partOfSpeech: isLong ? 'phrase' : 'noun',
+    saveToSRS(englishWord, {
       meaning: vietMeaning,
-      definitionEn: englishWord,
-      example: isLong ? englishWord : `Mastering: "${englishWord}".`,
-      exampleMeaning: isLong ? vietMeaning : `Ý nghĩa: "${vietMeaning}".`,
-      tag: selectedTone === 'business' ? 'Business' : selectedTone === 'tech' ? 'Tech' : selectedTone === 'academic' ? 'Academic' : 'Daily',
+      contextSentence: isLong ? englishWord : `Mastering: "${englishWord}".`,
     });
 
-    confetti({
-      particleCount: 60,
-      spread: 60,
-      origin: { y: 0.6 },
-    });
+    triggerCelebration('micro');
 
     setSaveStatus(`Đã lưu "${englishWord.slice(0, 30)}..." vào Flashcard SRS (+15 XP)!`);
     setTimeout(() => setSaveStatus(null), 3500);
@@ -215,16 +306,12 @@ export const TranslatorView: React.FC = () => {
             </div>
           </div>
 
-          {/* AI Badge Indicator */}
+          {/* AI Status Badge Indicator */}
           <div className="flex items-center gap-2">
-            <span className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5 border ${
-              geminiApiKey 
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
-                : 'bg-slate-800 text-slate-400 border-slate-700'
-            }`}>
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{geminiApiKey ? 'Gemini AI Đã Bật' : 'Dịch Theo Ngữ Cảnh Thông Minh'}</span>
-            </span>
+            <AIStatusBadge
+              onOpenModal={() => setIsKeyModalOpen(true)}
+              isFallback={Boolean(!geminiApiKey || translationResult?.isFallback)}
+            />
           </div>
         </div>
 
@@ -285,15 +372,44 @@ export const TranslatorView: React.FC = () => {
           {/* SOURCE TEXT INPUT BOX */}
           <div className="bg-slate-950 border border-slate-800 focus-within:border-teal-500 rounded-3xl p-5 flex flex-col justify-between min-h-[280px] transition-colors">
             <div className="space-y-2">
-              <div className="flex justify-between items-center text-xs text-slate-500">
-                <span className="font-bold text-slate-400">VĂN BẢN GỐC ({sourceLang.toUpperCase()})</span>
+              <div className="flex justify-between items-center text-xs text-slate-500 pb-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-400">VĂN BẢN GỐC ({sourceLang.toUpperCase()})</span>
+                  {sourceLang === 'en' && sourceText.trim() && (
+                    <div className="flex items-center bg-slate-900 border border-slate-800 rounded-xl p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setSourceViewMode('edit')}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                          sourceViewMode === 'edit'
+                            ? 'bg-teal-500 text-slate-950 shadow-xs'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Soạn thảo
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSourceViewMode('interactive')}
+                        className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                          sourceViewMode === 'interactive'
+                            ? 'bg-teal-500 text-slate-950 shadow-xs'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Tương tác
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {sourceText && (
                   <button
                     onClick={() => {
                       setSourceText('');
                       setTranslationResult(null);
                     }}
-                    className="hover:text-white p-0.5"
+                    className="hover:text-white p-0.5 cursor-pointer"
                     title="Xóa nội dung"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -301,18 +417,46 @@ export const TranslatorView: React.FC = () => {
                 )}
               </div>
 
-              <textarea
-                rows={7}
-                value={sourceText}
-                onChange={(e) => setSourceText(e.target.value)}
-                placeholder="Nhập từ, câu văn bản hoặc đoạn văn cần dịch..."
-                className="w-full bg-transparent text-sm sm:text-base text-white placeholder-slate-600 focus:outline-none resize-none leading-relaxed"
-              />
+              {sourceLang === 'en' && sourceViewMode === 'interactive' && sourceText.trim() ? (
+                <InteractiveSourceText
+                  sourceText={sourceText}
+                  analysis={textAnalysis}
+                  showCefrHighlight={showCefrHighlight}
+                  onToggleCefrHighlight={() => setShowCefrHighlight((prev) => !prev)}
+                  onSavePhraseToSRS={(phrase, meaning, note) => {
+                    handleSaveCollocation({
+                      phrase,
+                      meaning: meaning || `Cụm từ trong bản dịch: "${phrase}"`,
+                      note: note || `Trích xuất từ bản gốc tiếng Anh`,
+                    });
+                  }}
+                />
+              ) : (
+                <textarea
+                  rows={7}
+                  value={sourceText}
+                  onChange={(e) => setSourceText(e.target.value)}
+                  placeholder="Nhập từ, câu văn bản hoặc đoạn văn cần dịch..."
+                  className="w-full bg-transparent text-sm sm:text-base text-white placeholder-slate-600 focus:outline-none resize-none leading-relaxed"
+                />
+              )}
             </div>
 
             {/* Source Box Footer */}
             <div className="flex justify-between items-center pt-3 border-t border-slate-900 text-xs text-slate-500">
-              <span>{sourceText.length} ký tự</span>
+              <div className="flex items-center gap-2">
+                <span>{sourceText.length} ký tự</span>
+                {sourceLang === 'en' && sourceText.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setIsQuizModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 rounded-xl font-bold transition-all text-xs cursor-pointer active:scale-95"
+                  >
+                    <Brain className="w-3.5 h-3.5" />
+                    <span>Tạo Quiz từ đoạn này</span>
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => handleSpeak(sourceText, sourceLang)}
                 title="Nghe phát âm bản gốc"
@@ -380,6 +524,23 @@ export const TranslatorView: React.FC = () => {
                   <span className="text-slate-600 italic">Bản dịch sẽ hiển thị ở đây...</span>
                 )}
               </div>
+
+              {/* Fallback Notice Pill */}
+              {translationResult?.isFallback && currentOutputText && (
+                <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-amber-500/10 border border-amber-500/25 text-amber-300 rounded-2xl text-[11px] leading-snug shadow-sm">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Đang sử dụng kịch bản mẫu. Thêm Gemini API Key để phản hồi theo thời gian thực và mở rộng chủ đề tự do.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsKeyModalOpen(true)}
+                    className="font-bold underline hover:text-amber-200 shrink-0 ml-1 cursor-pointer"
+                  >
+                    Cài đặt
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Target Box Actions Footer */}
@@ -420,7 +581,16 @@ export const TranslatorView: React.FC = () => {
 
       </div>
 
-      {/* 4. HỘP PHÂN TÍCH CỤM TỪ & NGỮ PHÁP (Insight & Collocation Breakdown) */}
+      {/* 4. KHAI THÁC TỪ VỰNG & CỤM TỪ (Vocabulary Mining Panel) */}
+      {sourceLang === 'en' && sourceText.trim() && (
+        <VocabularyMiningPanel
+          sourceText={sourceText}
+          analysis={textAnalysis}
+          onCreateQuiz={() => setIsQuizModalOpen(true)}
+        />
+      )}
+
+      {/* 5. HỘP PHÂN TÍCH CỤM TỪ & NGỮ PHÁP (Insight & Collocation Breakdown) */}
       {translationResult && (
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-xl space-y-4">
           <div className="flex items-center gap-2 text-sm font-black text-amber-400">
@@ -438,22 +608,58 @@ export const TranslatorView: React.FC = () => {
 
           {/* Key Collocations */}
           {translationResult.collocations && translationResult.collocations.length > 0 && (
-            <div className="space-y-2">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                Cụm từ đắt giá trong câu (Key Collocations):
-              </span>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  Cụm từ đắt giá trong câu (Key Collocations):
+                </span>
+                {unsavedCollocations.length >= 2 && (
+                  <button
+                    onClick={handleSaveAllCollocations}
+                    className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Lưu tất cả cụm từ vào Flashcard ({unsavedCollocations.length})</span>
+                  </button>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {translationResult.collocations.map((item, idx) => (
-                  <div key={idx} className="p-3 bg-slate-850/80 border border-slate-800 rounded-2xl space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <strong className="text-xs font-black text-emerald-400">{item.phrase || item.term}</strong>
-                      <span className="text-[11px] text-slate-300 text-right">{item.meaning}</span>
+                {translationResult.collocations.map((item, idx) => {
+                  const phrase = (item.phrase || item.term || '').trim();
+                  const saved = isCollocationSaved(phrase);
+
+                  return (
+                    <div key={idx} className="p-3.5 bg-slate-850/80 border border-slate-800 rounded-2xl space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <strong className="text-xs font-black text-emerald-400 block">{phrase}</strong>
+                          <span className="text-[11px] text-slate-300">{item.meaning}</span>
+                        </div>
+
+                        {saved ? (
+                          <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>✓ Đã trong Flashcard (SM-2)</span>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleSaveCollocation(item)}
+                            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 transition-all active:scale-95 shadow-sm cursor-pointer"
+                            title="Lưu vào thẻ ghi nhớ SM-2 (+15 XP)"
+                          >
+                            <BookmarkPlus className="w-3.5 h-3.5 text-teal-400" />
+                            <span>Lưu Flashcard</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {item.note && (
+                        <p className="text-[11px] text-slate-500 italic">→ {item.note}</p>
+                      )}
                     </div>
-                    {item.note && (
-                      <p className="text-[11px] text-slate-500 italic">→ {item.note}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -511,6 +717,20 @@ export const TranslatorView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Gemini API Key Configuration Modal */}
+      <GeminiKeyModal
+        isOpen={isKeyModalOpen}
+        onClose={() => setIsKeyModalOpen(false)}
+      />
+
+      {/* Interactive Text Quiz Modal (Phase 3) */}
+      <TextQuizModal
+        isOpen={isQuizModalOpen}
+        onClose={() => setIsQuizModalOpen(false)}
+        sourceText={sourceText}
+        analysis={textAnalysis}
+      />
 
     </div>
   );

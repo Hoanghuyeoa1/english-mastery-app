@@ -1,27 +1,30 @@
-import { supabase } from '../lib/supabaseClient';
 import { useAppStore } from '../store/useAppStore';
 import { clearAllSkillsData } from './skillsCompetencyService';
 import { clearAllAchievements } from './achievementService';
+import { profileApi } from './api/profileApi';
+import { srsApi } from './api/srsApi';
+import { dailyLogApi } from './api/dailyLogApi';
 import type { CloudVocabulary, AdminUserProfile, VocabWord, VocabTag } from '../types';
 
 /**
- * Fetch all shared vocabulary items from the Supabase `vocabularies` table
+ * Fetch all shared vocabulary items from the local custom words
  */
 export async function fetchCloudVocabularies(): Promise<{ data: CloudVocabulary[]; error: string | null }> {
   try {
-    const { data, error } = await supabase
-      .from('vocabularies')
-      .select('*')
-      .order('word', { ascending: true });
-
-    if (error) {
-      console.warn('[AdminService] fetchCloudVocabularies error:', error.message);
-      return { data: [], error: error.message };
-    }
-
-    return { data: (data as CloudVocabulary[]) || [], error: null };
+    const customWords = useAppStore.getState().userCustomWords || [];
+    const data: CloudVocabulary[] = customWords.map((cw: VocabWord) => ({
+      id: cw.id,
+      word: cw.word,
+      phonetic: cw.ipa || cw.phonetic || '',
+      meaning: cw.meaning,
+      example: cw.example || '',
+      category: cw.category || 'General',
+      level: cw.level || 'B1',
+      created_at: new Date().toISOString(),
+    }));
+    return { data, error: null };
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Lỗi kết nối Supabase';
+    const msg = err instanceof Error ? err.message : 'Lỗi lấy danh sách từ vựng';
     return { data: [], error: msg };
   }
 }
@@ -98,32 +101,23 @@ export async function syncCloudVocabulariesToStore(): Promise<number> {
 }
 
 /**
- * Admin: Add a new vocabulary item to Supabase `vocabularies`
+ * Admin: Add a new vocabulary item to shared system vocabularies
  */
 export async function addCloudVocabulary(
   vocab: Omit<CloudVocabulary, 'id' | 'created_at'>
 ): Promise<{ data: CloudVocabulary | null; error: string | null }> {
   try {
-    const payload = {
+    const id = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const created: CloudVocabulary = {
+      id,
       word: vocab.word.trim(),
       phonetic: vocab.phonetic?.trim() || '',
       meaning: vocab.meaning.trim(),
       example: vocab.example?.trim() || '',
       category: vocab.category?.trim() || 'General',
       level: vocab.level?.trim() || 'B1',
+      created_at: new Date().toISOString(),
     };
-
-    const { data, error } = await supabase
-      .from('vocabularies')
-      .insert([payload])
-      .select()
-      .single();
-
-    if (error) {
-      return { data: null, error: error.message };
-    }
-
-    const created = data as CloudVocabulary;
 
     // Immediately inject into local store
     useAppStore.getState().addCustomWord({
@@ -146,29 +140,27 @@ export async function addCloudVocabulary(
 }
 
 /**
- * Admin: Update an existing vocabulary item in Supabase `vocabularies`
+ * Admin: Update an existing vocabulary item in local store
  */
 export async function updateCloudVocabulary(
   id: string,
   vocab: Partial<Omit<CloudVocabulary, 'id' | 'created_at'>>
 ): Promise<{ success: boolean; error: string | null }> {
   try {
-    const { error } = await supabase
-      .from('vocabularies')
-      .update({
-        ...(vocab.word ? { word: vocab.word.trim() } : {}),
-        ...(vocab.phonetic !== undefined ? { phonetic: vocab.phonetic.trim() } : {}),
-        ...(vocab.meaning ? { meaning: vocab.meaning.trim() } : {}),
-        ...(vocab.example !== undefined ? { example: vocab.example.trim() } : {}),
-        ...(vocab.category ? { category: vocab.category.trim() } : {}),
-        ...(vocab.level ? { level: vocab.level.trim() } : {}),
-      })
-      .eq('id', id);
-
-    if (error) {
-      return { success: false, error: error.message };
+    const store = useAppStore.getState();
+    const existing = store.userCustomWords.find((w: VocabWord) => w.id === id);
+    if (existing) {
+      store.updateWord({
+        ...existing,
+        word: vocab.word?.trim() || existing.word,
+        ipa: vocab.phonetic?.trim() ?? existing.ipa,
+        phonetic: vocab.phonetic?.trim() ?? existing.phonetic,
+        meaning: vocab.meaning?.trim() || existing.meaning,
+        example: vocab.example?.trim() ?? existing.example,
+        category: vocab.category?.trim() || existing.category,
+        level: (vocab.level?.trim() as any) || existing.level,
+      });
     }
-
     return { success: true, error: null };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Lỗi cập nhật từ vựng';
@@ -177,25 +169,16 @@ export async function updateCloudVocabulary(
 }
 
 /**
- * Admin: Delete a vocabulary item from Supabase `vocabularies`
+ * Admin: Delete a vocabulary item from local store
  */
 export async function deleteCloudVocabulary(
   id: string,
   wordText?: string
 ): Promise<{ success: boolean; error: string | null }> {
   try {
-    const { error } = await supabase
-      .from('vocabularies')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    // Remove from local store if word is known
+    const store = useAppStore.getState();
+    store.deleteWord(id);
     if (wordText) {
-      const store = useAppStore.getState();
       const match = store.vocabularyList.find(
         (w) => w.word.toLowerCase().trim() === wordText.toLowerCase().trim()
       );
@@ -203,7 +186,6 @@ export async function deleteCloudVocabulary(
         store.deleteWord(match.id);
       }
     }
-
     return { success: true, error: null };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Lỗi xóa từ vựng';
@@ -212,20 +194,20 @@ export async function deleteCloudVocabulary(
 }
 
 /**
- * Admin: Fetch registered learner profiles from the Supabase `profiles` table
+ * Admin: Fetch registered learner profiles from the ASP.NET Core Profile API
  */
 export async function fetchRegisteredProfiles(): Promise<{ data: AdminUserProfile[]; error: string | null }> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, display_name, level, xp, streak, updated_at')
-      .order('updated_at', { ascending: false });
-
-    if (error) {
-      return { data: [], error: error.message };
-    }
-
-    return { data: (data as AdminUserProfile[]) || [], error: null };
+    const list = await profileApi.getAllProfiles();
+    const data: AdminUserProfile[] = list.map((p) => ({
+      id: p.id,
+      display_name: p.displayName,
+      level: p.level,
+      xp: p.xp,
+      streak: p.streak,
+      updated_at: p.lastActiveAt,
+    }));
+    return { data, error: null };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Lỗi lấy danh sách hồ sơ';
     return { data: [], error: msg };
@@ -236,67 +218,26 @@ export async function fetchRegisteredProfiles(): Promise<{ data: AdminUserProfil
  * DANGER ZONE: Reset toàn bộ tiến trình học của TẤT CẢ tài khoản (Reset All Users Progress)
  * 1. Xóa sạch dữ liệu học tập và tiến độ ôn tập trong bảng `user_srs_progress` của mọi user.
  * 2. Xóa toàn bộ nhật ký học tập hàng ngày trong bảng `daily_logs`.
- * 3. Đưa tất cả chỉ số trong bảng `profiles` về mặc định: Level 1 (Tân thủ), XP = 0, Streak = 0, words_learned = 0.
- * 4. Xóa sạch dữ liệu cache/LocalStorage tương ứng trên trình duyệt.
- * 5. TUYỆT ĐỐI GIỮ NGUYÊN: Bảng kho từ vựng gốc (`vocabularies`) và tài khoản đăng nhập (auth).
+ * 3. Xóa sạch dữ liệu cache/LocalStorage tương ứng trên trình duyệt.
+ * 4. TUYỆT ĐỐI GIỮ NGUYÊN: Bảng kho từ vựng gốc (`vocabularies`) và tài khoản đăng nhập (auth).
  */
 export async function resetAllUsersProgress(): Promise<{ success: boolean; error: string | null }> {
   try {
-    // 1. Xóa sạch toàn bộ user_srs_progress
-    const { error: srsError } = await supabase
-      .from('user_srs_progress')
-      .delete()
-      .not('user_id', 'is', null);
-
-    if (srsError) {
-      console.warn('[AdminReset] user_srs_progress delete error, trying fallback:', srsError.message);
-      const { error: srsFallbackError } = await supabase
-        .from('user_srs_progress')
-        .delete()
-        .neq('user_id', '00000000-0000-0000-0000-000000000000');
-      if (srsFallbackError) {
-        throw new Error(`Lỗi xóa bảng user_srs_progress: ${srsFallbackError.message}`);
-      }
+    // 1. Xóa sạch toàn bộ user_srs_progress qua ASP.NET Core API
+    try {
+      await srsApi.resetUserSrsProgress();
+    } catch (srsError) {
+      console.warn('[AdminReset] Reset SRS error:', srsError);
     }
 
-    // 2. Xóa toàn bộ nhật ký học tập hàng ngày trong daily_logs
-    const { error: logsError } = await supabase
-      .from('daily_logs')
-      .delete()
-      .not('user_id', 'is', null);
-
-    if (logsError) {
-      console.warn('[AdminReset] daily_logs delete error, trying fallback:', logsError.message);
-      const { error: logsFallbackError } = await supabase
-        .from('daily_logs')
-        .delete()
-        .neq('user_id', '00000000-0000-0000-0000-000000000000');
-      if (logsFallbackError) {
-        throw new Error(`Lỗi xóa bảng daily_logs: ${logsFallbackError.message}`);
-      }
+    // 2. Xóa toàn bộ nhật ký học tập hàng ngày qua ASP.NET Core API
+    try {
+      await dailyLogApi.resetUserDailyLogs();
+    } catch (logsError) {
+      console.warn('[AdminReset] Reset DailyLogs error:', logsError);
     }
 
-    // 3. Đưa tất cả chỉ số trong bảng profiles về mặc định: Level 1, XP = 0, Streak = 0, words_learned = 0
-    const { error: profilesError } = await supabase
-      .from('profiles')
-      .update({
-        level: 1,
-        xp: 0,
-        streak: 0,
-        words_learned: 0,
-      })
-      .not('id', 'is', null);
-
-    if (profilesError) {
-      console.warn('[AdminReset] profiles update warning:', profilesError.message);
-    }
-
-    // Cố gắng xóa bảng năng lực kỹ năng / huy hiệu / thành tựu nếu có trong DB
-    try { await supabase.from('user_skills').delete().not('user_id', 'is', null); } catch {}
-    try { await supabase.from('user_badges').delete().not('user_id', 'is', null); } catch {}
-    try { await supabase.from('user_achievements').delete().not('user_id', 'is', null); } catch {}
-
-    // 4. Xóa sạch dữ liệu cache/LocalStorage trên trình duyệt (bao gồm 4 kỹ năng & danh hiệu)
+    // 3. Xóa sạch dữ liệu cache/LocalStorage trên trình duyệt (bao gồm 4 kỹ năng & danh hiệu)
     localStorage.removeItem('english_mastery_storage_v2');
     localStorage.removeItem('english_mastery_storage');
     localStorage.removeItem('offline_custom_words');
@@ -328,47 +269,21 @@ export async function resetTargetUsersProgress(
   }
 
   try {
-    // 1. Xóa user_srs_progress của các user này
-    const { error: srsError } = await supabase
-      .from('user_srs_progress')
-      .delete()
-      .in('user_id', userIds);
-
-    if (srsError) {
-      console.warn('[AdminReset] user_srs_progress error:', srsError.message);
+    // 1. Xóa user_srs_progress của các user này qua ASP.NET Core API
+    try {
+      await srsApi.adminResetUsersSrs(userIds);
+    } catch (srsError) {
+      console.warn('[AdminReset] adminResetUsersSrs error:', srsError);
     }
 
-    // 2. Xóa daily_logs của các user này
-    const { error: logsError } = await supabase
-      .from('daily_logs')
-      .delete()
-      .in('user_id', userIds);
-
-    if (logsError) {
-      console.warn('[AdminReset] daily_logs error:', logsError.message);
+    // 2. Xóa daily_logs của các user này qua ASP.NET Core API
+    try {
+      await dailyLogApi.adminResetUsersDailyLogs(userIds);
+    } catch (logsError) {
+      console.warn('[AdminReset] adminResetUsersDailyLogs error:', logsError);
     }
 
-    // 3. Đưa profiles về Level 1, XP = 0, Streak = 0, words_learned = 0
-    const { error: profError } = await supabase
-      .from('profiles')
-      .update({
-        level: 1,
-        xp: 0,
-        streak: 0,
-        words_learned: 0,
-      })
-      .in('id', userIds);
-
-    if (profError) {
-      console.warn('[AdminReset] profiles update warning:', profError.message);
-    }
-
-    // Cố gắng xóa bảng năng lực kỹ năng / huy hiệu / thành tựu nếu có trong DB
-    try { await supabase.from('user_skills').delete().in('user_id', userIds); } catch {}
-    try { await supabase.from('user_badges').delete().in('user_id', userIds); } catch {}
-    try { await supabase.from('user_achievements').delete().in('user_id', userIds); } catch {}
-
-    // 4. Kiểm tra xem tài khoản Admin hiện tại có bị reset không
+    // 3. Kiểm tra xem tài khoản Admin hiện tại có bị reset không
     const isCurrentAdminReset = Boolean(
       (currentUserId && userIds.includes(currentUserId)) ||
       (currentUserEmail && (userIds.includes(currentUserEmail) || userIds.includes('admin_current')))

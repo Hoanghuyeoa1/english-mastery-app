@@ -17,12 +17,15 @@ export interface TranslationResult {
   contextNote: string;
   toneUsed: TranslationTone;
   isAiPowered: boolean;
+  isFallback: boolean;
   // Aliases for backwards compatibility
   mainTranslation: string;
   formalVersion: string;
   casualVersion: string;
   keyCollocations: CollocationInsight[];
 }
+
+export { testGeminiApiKey } from './geminiService';
 
 export type ContextAwareTranslationResult = TranslationResult;
 
@@ -219,10 +222,12 @@ function transformOfflineByTone(
   contextNote: string;
 } {
   const normalizedSource = sourceText.trim().toLowerCase().replace(/[.,!?;:]+$/, '');
+  const withDot = normalizedSource + '.';
   
   // 1. Kiểm tra nếu có mẫu câu preset hoàn chỉnh
-  if (PRESET_SENTENCE_KNOWLEDGE[normalizedSource] && PRESET_SENTENCE_KNOWLEDGE[normalizedSource][tone]) {
-    return PRESET_SENTENCE_KNOWLEDGE[normalizedSource][tone];
+  const preset = (PRESET_SENTENCE_KNOWLEDGE[normalizedSource] || PRESET_SENTENCE_KNOWLEDGE[withDot])?.[tone];
+  if (preset) {
+    return preset;
   }
 
   // 2. Trích xuất thuật ngữ & collocations và chuẩn hóa sang tiếng Việt
@@ -426,6 +431,7 @@ export async function translateWithContext(
       contextNote: '',
       toneUsed: tone,
       isAiPowered: false,
+      isFallback: false,
       mainTranslation: '',
       formalVersion: '',
       casualVersion: '',
@@ -433,10 +439,12 @@ export async function translateWithContext(
     };
   }
 
+  const trimmedKey = apiKey?.trim();
+
   // 1. NẾU CÓ GEMINI API KEY -> GỌI GEMINI AI VỚI SYSTEM PROMPT TỐI ƯU TIẾNG VIỆT CHUẨN XÁC
-  if (apiKey && apiKey.trim().length > 10) {
+  if (trimmedKey && trimmedKey.length > 10) {
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`;
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(trimmedKey)}`;
 
       const systemPrompt = `
 Bạn là chuyên gia dịch thuật song ngữ Anh - Việt cao cấp, thông thạo văn phong Công nghệ (IT), Công sở (Business), Học thuật (Academic) và Đời thường (Casual).
@@ -518,6 +526,7 @@ Chỉ trả về DUY NHẤT một JSON Object hợp lệ (không kèm Markdown c
             contextNote: parsed.contextNote || `Dịch chuẩn xác theo ngữ cảnh ${tone.toUpperCase()}.`,
             toneUsed: tone,
             isAiPowered: true,
+            isFallback: false,
             // Aliases
             mainTranslation: standardText,
             formalVersion: formalText,
@@ -525,18 +534,23 @@ Chỉ trả về DUY NHẤT một JSON Object hợp lệ (không kèm Markdown c
             keyCollocations: collocations,
           };
         }
+        console.warn('[AITranslation] Gemini returned JSON without expected text, falling back to offline semantic engine.');
+      } else {
+        console.warn(`[AITranslation] Gemini Translation API returned HTTP ${res.status}: ${res.statusText}, falling back to offline semantic engine.`);
       }
     } catch (err) {
-      console.warn('Gemini Translation API encountered an error, falling back to smart semantic engine:', err);
+      console.warn('[AITranslation] Gemini Translation API encountered an error, falling back to smart semantic engine:', err);
     }
+  } else {
+    console.warn('[AITranslation] No valid Gemini API Key configured, using smart offline semantic engine.');
   }
 
-  // 2. SMART OFFLINE SEMANTIC FALLBACK ENGINE (Khi chưa có API key hoặc mạng chập chờn)
+  // 2. SMART OFFLINE SEMANTIC FALLBACK ENGINE (Khi chưa có API key hoặc mạng chập chờn / lỗi)
   let baseTranslation = '';
   try {
     baseTranslation = await translateText(cleanText, sourceLang, targetLang);
   } catch (e) {
-    console.warn('Base translateText failed:', e);
+    console.warn('[AITranslation] Base translateText failed, falling back to source text:', e);
   }
 
   if (!baseTranslation) {
@@ -565,6 +579,7 @@ Chỉ trả về DUY NHẤT một JSON Object hợp lệ (không kèm Markdown c
     contextNote: transformed.contextNote,
     toneUsed: tone,
     isAiPowered: false,
+    isFallback: true,
     // Aliases
     mainTranslation: transformed.standard,
     formalVersion: transformed.formal,

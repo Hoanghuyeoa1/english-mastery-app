@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Flame, Calendar } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { getVietnamDateString, VIETNAM_UTC_OFFSET_HOURS } from '../utils/dateUtils';
 
 type TimeRange = 13 | 24 | 52; // 3 tháng (~13 tuần), 6 tháng (~24 tuần), 1 năm (~52 tuần)
 
@@ -29,20 +30,24 @@ export const ActivityHeatmap: React.FC = () => {
   // Tính toán dữ liệu 24 tuần (Thứ Hai -> Chủ Nhật) kết thúc đúng tại tuần hiện tại
   const { weeks, monthLabelsByWeek, totalWordsInPeriod, activeDaysCount, totalXpInPeriod } = useMemo(() => {
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
+    const todayStr = getVietnamDateString(now);
 
-    // Căn chỉnh tuần hiện tại kết thúc vào Chủ Nhật (Sunday)
-    const jsDay = now.getDay(); // 0: CN, 1: T2, ..., 6: T7
+    // Căn chỉnh tuần theo múi giờ Việt Nam (UTC+7) kết thúc vào Chủ Nhật (Sunday)
+    const vnTimeMs = now.getTime() + VIETNAM_UTC_OFFSET_HOURS * 3600 * 1000;
+    const vnNow = new Date(vnTimeMs);
+    const jsDay = vnNow.getUTCDay(); // 0: CN, 1: T2, ..., 6: T7
     const dayOfWeekMon = jsDay === 0 ? 6 : jsDay - 1; // 0: T2 ... 6: CN
     const daysToSunday = 6 - dayOfWeekMon;
 
-    const endSunday = new Date(now);
-    endSunday.setDate(now.getDate() + daysToSunday);
+    const endSundayUtcMs = Date.UTC(
+      vnNow.getUTCFullYear(),
+      vnNow.getUTCMonth(),
+      vnNow.getUTCDate() + daysToSunday
+    );
 
     // Tính ngày Thứ Hai đầu tiên của chuỗi tuần
     const totalDays = timeRange * 7;
-    const startDate = new Date(endSunday);
-    startDate.setDate(endSunday.getDate() - totalDays + 1);
+    const startMondayUtcMs = endSundayUtcMs - (totalDays - 1) * 86400000;
 
     const allWeeks: HeatmapDay[][] = [];
     let totalWords = 0;
@@ -53,10 +58,13 @@ export const ActivityHeatmap: React.FC = () => {
       const weekDays: HeatmapDay[] = [];
 
       for (let d = 0; d < 7; d++) {
-        const curDate = new Date(startDate);
-        curDate.setDate(startDate.getDate() + w * 7 + d);
+        const curUtcMs = startMondayUtcMs + (w * 7 + d) * 86400000;
+        const curDate = new Date(curUtcMs);
+        const y = curDate.getUTCFullYear();
+        const m = String(curDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(curDate.getUTCDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${day}`;
 
-        const dateStr = curDate.toISOString().split('T')[0];
         const isFuture = dateStr > todayStr;
         const isToday = dateStr === todayStr;
 
@@ -90,9 +98,7 @@ export const ActivityHeatmap: React.FC = () => {
           else if (safeWordsCount >= 1 || safeXp > 0) level = 1;
         }
 
-        const formattedDate = `${curDate.getDate().toString().padStart(2, '0')}/${(curDate.getMonth() + 1)
-          .toString()
-          .padStart(2, '0')}/${curDate.getFullYear()}`;
+        const formattedDate = `${day}/${m}/${y}`;
 
         weekDays.push({
           date: dateStr,

@@ -13,7 +13,7 @@ import {
   Zap,
   Info
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { triggerCelebration } from '../utils/confettiPolicy';
 import { useAppStore } from '../store/useAppStore';
 import { 
   createSpeechRecognizer, 
@@ -48,6 +48,18 @@ export const VoicePronunciationModal: React.FC<VoicePronunciationModalProps> = (
   const [assessmentResult, setAssessmentResult] = useState<PronunciationAssessmentResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const recognizerRef = useRef<any>(null);
+
+  // Handle ESC key to close
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Reset state when opening with new text
   useEffect(() => {
@@ -93,17 +105,22 @@ export const VoicePronunciationModal: React.FC<VoicePronunciationModalProps> = (
           const result = assessPronunciation(targetText, transcript);
           setAssessmentResult(result);
 
-          if (result.score >= 85) {
-            confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
+          if (result.score >= 75) {
+            triggerCelebration('micro', { particleCount: 70, spread: 75, origin: { y: 0.6 } });
             gainXP(result.xpEarned || 25);
-            recordMistakeCorrect(targetText);
+            recordMistakeCorrect(targetText, { type: 'pronunciation' });
             onSuccess?.(result.score);
           } else if (result.score >= 60) {
             gainXP(result.xpEarned || 15);
             onSuccess?.(result.score);
           } else {
             // Điểm thấp -> Ghi nhận vào bẫy lỗi để nhắc ôn tập lại
-            recordMistake({ word: targetText, meaning: meaning || '' }, 'pronunciation');
+            recordMistake({ word: targetText, meaning: meaning || '', ipa }, 'pronunciation', {
+              type: 'pronunciation',
+              userAnswer: transcript,
+              expectedAnswer: targetText,
+              context: `Pronunciation score: ${result.score}% (Feedback: ${result.feedback})`,
+            });
           }
         }
       },
@@ -137,7 +154,12 @@ export const VoicePronunciationModal: React.FC<VoicePronunciationModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="voice-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn motion-reduce:animate-none"
+    >
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}

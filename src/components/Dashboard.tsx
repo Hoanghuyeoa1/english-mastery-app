@@ -1,22 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Flame, 
   Sparkles, 
   Brain, 
-  Target, 
   Mic, 
   Zap, 
   ArrowRight, 
   Volume2,
-  RefreshCw, 
-  Bot, 
   Award,
   ShieldAlert,
   Headphones,
   BookOpen,
   PenTool,
   Gift,
-  Trophy,
   CheckCircle2,
   Crown,
   Lock,
@@ -24,22 +20,51 @@ import {
   TrendingUp,
   ShieldCheck,
   Play,
-  Layers
+  Layers,
+  Copy,
+  Check
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
 import { useAppStore } from '../store/useAppStore';
 import { getDueReviewWords } from '../services/srsAlgorithm';
 import { speakWord } from '../services/speechService';
-import { ActiveTab } from '../types';
+import { ActiveTab, MistakeType } from '../types';
+import { triggerCelebration } from '../utils/confettiPolicy';
+import { buildAdaptiveLearningSession } from '../services/adaptiveSessionBuilder';
+import { getModuleNavigationTarget } from '../services/adaptivePracticeRouter';
 import { ActivityHeatmap } from './ActivityHeatmap';
+import { FourSkillsAdaptiveSummary } from './FourSkillsAdaptiveSummary';
+import { getVietnamDateString } from '../utils/dateUtils';
+
+const MISTAKE_TYPE_LABELS: Record<MistakeType, string> = {
+  meaning: 'Ý nghĩa từ',
+  spelling: 'Chính tả',
+  listening: 'Nghe hiểu',
+  pronunciation: 'Phát âm',
+  collocation: 'Cụm từ',
+  grammar: 'Ngữ pháp',
+  reading: 'Đọc hiểu',
+  writing: 'Viết luận',
+  other: 'Khác',
+};
 import { UserAvatar, UserRankBadge } from './UserProfileBadge';
 import { getUserRankInfo, getXpLevelProgress } from '../utils/userRank';
-import { getDailyQuote } from '../data/dailyQuotes';
+import { useDailyMotivationQuote } from '../services/dailyQuoteService';
 import { ReviewModal } from './ReviewModal';
 import { MyVocabBankModal } from './MyVocabBankModal';
 import { AchievementsModal } from './AchievementsModal';
 import { getFourSkillsCompetency } from '../services/skillsCompetencyService';
 import { evaluateUserAchievements } from '../services/achievementService';
+import { LeechWordsWidget } from './LeechWordsWidget';
+import { AdaptiveLearningSummary } from './AdaptiveLearningSummary';
+import { TodayLearningPlanWidget } from './TodayLearningPlanWidget';
+import { ContinueLearningSection } from './ContinueLearningSection';
+import { PersonalizedInsightsSection } from './PersonalizedInsightsSection';
+import { generateTodayLearningPlan } from '../services/todayLearningPlanService';
+import { SRSAnalyticsModal } from './SRSAnalyticsModal';
+import { computeRetentionMetrics } from '../services/srsAnalytics';
+import { extractCardDueReferences, forecastSRSWorkload } from '../services/srsWorkloadForecast';
+import { detectDeckLeeches } from '../services/leechDetector';
+import { getRetentionRecommendationFromMetrics } from '../services/retentionRecommendation';
 
 interface DashboardProps {
   onNavigate: (tab: ActiveTab) => void;
@@ -47,22 +72,120 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
-  const { profile, vocabularyList, srsProgressMap, dailyHistory, mistakeBank, gainXP } = useAppStore();
+  const { 
+    profile, 
+    vocabularyList, 
+    userCollocations,
+    srsProgressMap, 
+    dailyHistory, 
+    mistakeBank, 
+    gainXP,
+    recentReviewEvents,
+    completedListeningLessonIds,
+    fourSkillsCompletionProgress,
+    fourSkillsScores,
+    fourSkillsEvidence,
+    fsrsSettings,
+    srsAlgorithm,
+    startAdaptivePractice,
+    setActiveFourSkill,
+    isHydrated,
+    resumeActivities,
+    checkpointHistory,
+    levelCertifications,
+  } = useAppStore();
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isMyVocabBankOpen, setIsMyVocabBankOpen] = useState(false);
   const [isAchievementsModalOpen, setIsAchievementsModalOpen] = useState(false);
+  const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
 
-  const fourSkills = getFourSkillsCompetency(srsProgressMap);
-  const systemAchievements = evaluateUserAchievements({
-    profile,
+  // Memoized Today Learning Plan (Deterministic, Pure Orchestration)
+  const todayPlan = useMemo(() => {
+    return generateTodayLearningPlan({
+      vocabularyList,
+      userCollocations,
+      srsProgressMap,
+      mistakeBank,
+      fourSkillsScores,
+      fourSkillsEvidence,
+      completedListeningLessonIds,
+      fourSkillsCompletionProgress,
+      completedReadingLessonIds: fourSkillsCompletionProgress?.reading,
+      completedSpeakingPromptIds: fourSkillsCompletionProgress?.speaking,
+      completedWritingPromptIds: fourSkillsCompletionProgress?.writing,
+      dailyHistory,
+      profile,
+      srsAlgorithm,
+      fsrsSettings,
+      targetMinutes: 20,
+      resumeActivities,
+      checkpointHistory,
+      levelCertifications,
+    });
+  }, [
+    vocabularyList,
+    userCollocations,
     srsProgressMap,
+    mistakeBank,
+    fourSkillsScores,
+    fourSkillsEvidence,
+    completedListeningLessonIds,
+    fourSkillsCompletionProgress,
     dailyHistory,
-  });
+    profile,
+    srsAlgorithm,
+    fsrsSettings,
+    resumeActivities,
+    checkpointHistory,
+    levelCertifications,
+  ]);
+
+  // Memoized Adaptive Learning Metrics
+  const metrics = useMemo(() => {
+    return computeRetentionMetrics(
+      recentReviewEvents || [],
+      fsrsSettings?.desiredRetention ?? 0.90,
+      30
+    );
+  }, [recentReviewEvents, fsrsSettings?.desiredRetention]);
+
+  const cardRefs = useMemo(() => {
+    return extractCardDueReferences(srsProgressMap);
+  }, [srsProgressMap]);
+
+  const forecast = useMemo(() => {
+    return forecastSRSWorkload(cardRefs, 7);
+  }, [cardRefs]);
+
+  const leeches = useMemo(() => {
+    return detectDeckLeeches(vocabularyList, srsProgressMap);
+  }, [vocabularyList, srsProgressMap]);
+  const leechCount = leeches.length;
+
+  const adaptiveRecommendation = useMemo(() => {
+    return getRetentionRecommendationFromMetrics(
+      metrics,
+      fsrsSettings?.desiredRetention ?? 0.90,
+      forecast.today,
+      srsAlgorithm
+    );
+  }, [metrics, fsrsSettings?.desiredRetention, forecast.today, srsAlgorithm]);
+
+  const fourSkills = useMemo(() => getFourSkillsCompetency(srsProgressMap), [srsProgressMap]);
+  const systemAchievements = useMemo(
+    () =>
+      evaluateUserAchievements({
+        profile,
+        srsProgressMap,
+        dailyHistory,
+      }),
+    [profile, srsProgressMap, dailyHistory]
+  );
   const unlockedBadgesCount = systemAchievements.filter((a) => a.isUnlocked).length;
   const totalBadgesCount = systemAchievements.length;
   const badgesProgressPercent = Math.round((unlockedBadgesCount / totalBadgesCount) * 100);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = getVietnamDateString();
   const todayProgress = dailyHistory[today] || {
     date: today,
     wordsReviewed: 0,
@@ -72,12 +195,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     xpGained: 0,
   };
 
-  const dueWords = getDueReviewWords(vocabularyList);
-  const masteredWords = vocabularyList.filter((w) => w.srsLevel >= 3);
-  const learningWords = vocabularyList.filter((w) => w.srsLevel > 0 && w.srsLevel < 3);
-  const newWords = vocabularyList.filter((w) => w.srsLevel === 0 && !w.lastReviewedDate);
+  const dueWords = useMemo(() => getDueReviewWords(vocabularyList), [vocabularyList]);
 
-  const unresolvedMistakes = Object.values(mistakeBank || {}).filter((m) => !m.resolved);
+  const unresolvedMistakes = useMemo(
+    () => Object.values(mistakeBank || {}).filter((m) => !m.resolved),
+    [mistakeBank]
+  );
+  const recurringMistakes = useMemo(
+    () => Object.values(mistakeBank || {}).filter((m) => !m.resolved && (m.reopenCount ?? 0) > 0),
+    [mistakeBank]
+  );
+
+  const isNewUser = useMemo(() => {
+    return (
+      (metrics.totalReviews === 0 || metrics.windowDays === 0) &&
+      Object.keys(srsProgressMap || {}).length === 0 &&
+      Object.keys(mistakeBank || {}).length === 0
+    );
+  }, [metrics.totalReviews, metrics.windowDays, srsProgressMap, mistakeBank]);
+
+  const adaptiveSession = useMemo(() => {
+    return buildAdaptiveLearningSession(mistakeBank, { targetMinutes: 15 });
+  }, [mistakeBank]);
+
+  const handleStartAdaptiveSession = () => {
+    if (adaptiveSession.exercises.length === 0) {
+      onNavigate('mistakes');
+      return;
+    }
+    const firstEx = adaptiveSession.exercises[0];
+    const targetItemIds = adaptiveSession.exercises
+      .filter((e) => e.recommendedModule === firstEx.recommendedModule)
+      .map((e) => e.targetId);
+
+    startAdaptivePractice({
+      module: firstEx.recommendedModule,
+      itemIds: targetItemIds.length > 0 ? targetItemIds : [firstEx.targetId],
+      mistakeType: firstEx.mistakeType,
+    });
+    const target = getModuleNavigationTarget(firstEx.recommendedModule);
+    onNavigate(target.tab);
+  };
+
   const userRank = getUserRankInfo(profile.level);
 
   // Dynamic Time-Based Greeting
@@ -92,8 +251,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     timeIcon = '🌙';
   }
 
-  // Daily Quote (seeded by Day of Year / Date)
-  const currentQuote = getDailyQuote(today);
+  // Daily Motivation Quote (Asia/Ho_Chi_Minh with automatic 00:00 rollover & wake recovery)
+  const currentQuote = useDailyMotivationQuote();
+  const [copiedQuote, setCopiedQuote] = useState(false);
+
+  const handleCopyQuote = async () => {
+    try {
+      const quoteText = `"${currentQuote.en}"\n${currentQuote.vi}${currentQuote.author ? ` — ${currentQuote.author}` : ''}`;
+      await navigator.clipboard.writeText(quoteText);
+      setCopiedQuote(true);
+      setTimeout(() => setCopiedQuote(false), 2000);
+    } catch {
+      // Fallback in case clipboard API is blocked
+    }
+  };
 
   // EXP Level Progression (RPG Scaling Formula)
   const xpProgress = getXpLevelProgress(profile.xp);
@@ -118,24 +289,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   });
 
   // Calculate Quest Progress
-  // Quest 1: Listening / Reading Completed (from localStorage tracking or quizzes)
-  const completedListeningCount = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('completed_listening_lessons') || '[]').length;
-    } catch {
-      return 0;
-    }
-  })();
+  // Quest 1: Listening / Reading Completed (from store tracking or quizzes)
+  const completedListeningCount = completedListeningLessonIds?.length || 0;
   const q1Progress = Math.min(1, (todayProgress.quizzesCompleted > 0 || completedListeningCount > 0 ? 1 : 0));
 
   // Quest 2: Speaking practice completed
-  const completedSpeakingCount = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('completed_speaking_prompts') || '[]').length;
-    } catch {
-      return 0;
-    }
-  })();
+  const completedSpeakingCount = fourSkillsCompletionProgress?.speaking?.length || 0;
   const q2Progress = Math.min(1, (todayProgress.pronunciationsMastered > 0 || completedSpeakingCount > 0 ? 1 : 0));
 
   // Quest 3: 20 Flashcards reviewed
@@ -148,36 +307,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const allQuestsCompleted = isQuest1Done && isQuest2Done && isQuest3Done;
   const isChestClaimedToday = chestClaimedDate === today;
 
-  const fireGoldenConfetti = () => {
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#F59E0B', '#10B981', '#06B6D4', '#8B5CF6']
-      });
-    } catch {
-      // fallback
+  // Derived Transient XP Delta Feedback (Pure UI, zero store mutation, mount-guarded)
+  const [xpDeltaNotice, setXpDeltaNotice] = useState<{ amount: number } | null>(null);
+  const prevXpRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (prevXpRef.current === null) {
+      prevXpRef.current = profile.xp;
+      return;
     }
+    const delta = profile.xp - prevXpRef.current;
+    prevXpRef.current = profile.xp;
+    if (delta > 0) {
+      setXpDeltaNotice({ amount: delta });
+      const timer = setTimeout(() => setXpDeltaNotice(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [profile.xp]);
+
+  const fireGoldenConfetti = () => {
+    triggerCelebration('completion', {
+      particleCount: 80,
+      spread: 80,
+      origin: { y: 0.6 },
+      colors: ['#F59E0B', '#10B981', '#06B6D4', '#8B5CF6'],
+    });
   };
 
   const handleClaimQuest = (questNumber: number, xpReward: number) => {
+    const claimKey = `quest_${questNumber}_claimed_${today}`;
+    if (localStorage.getItem(claimKey) === 'true') {
+      return;
+    }
     gainXP(xpReward);
     fireGoldenConfetti();
+    localStorage.setItem(claimKey, 'true');
     if (questNumber === 1) {
       setQuest1Claimed(true);
-      localStorage.setItem(`quest_1_claimed_${today}`, 'true');
     } else if (questNumber === 2) {
       setQuest2Claimed(true);
-      localStorage.setItem(`quest_2_claimed_${today}`, 'true');
     } else if (questNumber === 3) {
       setQuest3Claimed(true);
-      localStorage.setItem(`quest_3_claimed_${today}`, 'true');
     }
   };
 
   const handleClaimChest = () => {
     if (!allQuestsCompleted || isChestClaimedToday) return;
+    if (localStorage.getItem('daily_chest_claimed_date') === today) return;
     gainXP(100);
     fireGoldenConfetti();
     setChestClaimedDate(today);
@@ -245,6 +421,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   level={currentLevel}
                   size="lg"
                   showLevelBadge={true}
+                  equippedFrame={profile.equippedFrame}
                 />
               </div>
             </div>
@@ -277,14 +454,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     <Crown className="w-3.5 h-3.5 text-amber-400" />
                     <span>👑 Cấp {currentLevel} ➔ Cấp {currentLevel + 1}</span>
                   </span>
-                  <span className="text-slate-300 font-mono font-bold">
-                    {currentLevelXp} / {nextLevelXpRequired} XP ({percentage}%)
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {xpDeltaNotice && (
+                      <span
+                        data-testid="xp-delta-badge"
+                        className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-black bg-amber-400/20 text-amber-300 border border-amber-400/40 animate-fadeIn motion-reduce:animate-none"
+                      >
+                        +{xpDeltaNotice.amount} XP
+                      </span>
+                    )}
+                    <span className="text-slate-300 font-mono font-bold">
+                      {currentLevelXp} / {nextLevelXpRequired} XP ({percentage}%)
+                    </span>
+                  </div>
                 </div>
 
                 <div className="w-full bg-slate-950/90 border border-slate-800 h-3 rounded-full overflow-hidden p-0.5 shadow-inner">
                   <div 
-                    className="bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-300 h-full rounded-full transition-all duration-700 shadow-md shadow-amber-500/50"
+                    className="bg-gradient-to-r from-amber-400 via-orange-400 to-yellow-300 h-full rounded-full transition-all duration-700 shadow-md shadow-amber-500/50 motion-reduce:transition-none"
                     style={{ width: `${percentage}%` }}
                   />
                 </div>
@@ -299,13 +486,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>Trích dẫn động lực ngày:</span>
               </span>
-              <button
-                onClick={() => speakWord(currentQuote.en)}
-                title="Nghe phát âm câu châm ngôn"
-                className="p-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 rounded-xl transition-colors"
-              >
-                <Volume2 className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleCopyQuote}
+                  title={copiedQuote ? "Đã sao chép vào bộ nhớ tạm" : "Sao chép trích dẫn"}
+                  aria-label="Sao chép trích dẫn"
+                  className="p-1.5 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white rounded-xl transition-colors"
+                >
+                  {copiedQuote ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => speakWord(currentQuote.en)}
+                  title="Nghe phát âm câu châm ngôn"
+                  aria-label="Nghe phát âm câu châm ngôn"
+                  className="p-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 rounded-xl transition-colors"
+                >
+                  <Volume2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <p className="text-xs sm:text-sm font-semibold text-slate-100 italic leading-relaxed">
@@ -313,19 +511,57 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </p>
 
             <p className="text-xs text-slate-400 pt-1 border-t border-slate-850">
-              🇻🇳 {currentQuote.vi} — <strong className="text-slate-300 font-semibold">{currentQuote.author}</strong>
+              🇻🇳 {currentQuote.vi}{currentQuote.author ? <> — <strong className="text-slate-300 font-semibold">{currentQuote.author}</strong></> : null}
             </p>
           </div>
 
         </div>
 
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. TODAY LEARNING HUB (CONTINUE LEARNING + TODAY LEARNING PLAN)           */}
+      {/* ========================================================================= */}
+      <ContinueLearningSection
+        onNavigate={onNavigate}
+        setActiveFourSkill={setActiveFourSkill}
+      />
+
+      <TodayLearningPlanWidget
+        plan={todayPlan}
+        onNavigate={onNavigate}
+        onStartAdaptivePractice={startAdaptivePractice}
+        setActiveFourSkill={setActiveFourSkill}
+        userName={profile.name}
+        isHydrated={isHydrated}
+      />
+
+      {/* 2.5 PERSONALIZED LEARNING INSIGHTS (DERIVED EVIDENCE LAYER) */}
+      <PersonalizedInsightsSection
+        onNavigate={onNavigate}
+        onStartAdaptivePractice={startAdaptivePractice}
+        setActiveFourSkill={setActiveFourSkill}
+      />
+
+      {/* ========================================================================= */}
+      {/* 3. PROGRESS TODAY (TIẾN ĐỘ HÔM NAY: CHỈ SỐ NGÀY & NHIỆM VỤ RƯƠNG BÁU)     */}
+      {/* ========================================================================= */}
+      <div className="space-y-6">
         {/* Quick Performance Counter Badges */}
-        <div className="mt-8 pt-6 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           
           {/* Nút Kích Hoạt Ôn Tập Từ Vựng - Interactive Card */}
           <div 
             onClick={() => setIsReviewModalOpen(true)}
-            className="group relative flex items-center justify-between bg-slate-950/80 hover:bg-slate-900 border border-slate-800/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition-all duration-200 hover:scale-[1.02] shadow-lg hover:shadow-emerald-500/10 select-none"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setIsReviewModalOpen(true);
+              }
+            }}
+            className="group relative flex items-center justify-between bg-slate-950/80 hover:bg-slate-900 border border-slate-800/80 hover:border-emerald-500/50 p-3.5 rounded-2xl cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] motion-reduce:transform-none motion-reduce:transition-none shadow-lg hover:shadow-emerald-500/10 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             title="Nhấp để bắt đầu phiên ôn tập từ vựng"
           >
             <div>
@@ -378,12 +614,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
         </div>
 
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 2. HỆ THỐNG NHIỆM VỤ NGÀY & RƯƠNG BÁU (DAILY QUESTS & MYSTERY CHEST)       */}
-      {/* ========================================================================= */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+        {/* Hệ Thống Nhiệm Vụ Ngày & Rương Báu Hoàng Gia */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
         
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
           <div className="flex items-center gap-3">
@@ -435,7 +667,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 ) : (
                   <button
                     onClick={() => handleClaimQuest(1, 50)}
-                    className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs shadow-md"
+                    className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 active:scale-[0.97] transition-all duration-150 motion-reduce:transform-none motion-reduce:transition-none text-slate-950 font-black rounded-xl text-xs shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
                   >
                     Nhận +50 XP
                   </button>
@@ -443,7 +675,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               ) : (
                 <button
                   onClick={() => onNavigate('four_skills')}
-                  className="text-xs font-bold text-cyan-400 hover:underline flex items-center gap-1"
+                  className="text-xs font-bold text-cyan-400 hover:underline active:scale-[0.97] transition-transform duration-150 motion-reduce:transform-none motion-reduce:transition-none flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 rounded"
                 >
                   <span>Luyện ngay</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -481,7 +713,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 ) : (
                   <button
                     onClick={() => handleClaimQuest(2, 60)}
-                    className="px-3 py-1 bg-purple-500 hover:bg-purple-400 text-white font-black rounded-xl text-xs shadow-md"
+                    className="px-3 py-1 bg-purple-500 hover:bg-purple-400 active:scale-[0.97] transition-all duration-150 motion-reduce:transform-none motion-reduce:transition-none text-white font-black rounded-xl text-xs shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                   >
                     Nhận +60 XP
                   </button>
@@ -489,7 +721,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               ) : (
                 <button
                   onClick={() => onNavigate('four_skills')}
-                  className="text-xs font-bold text-purple-400 hover:underline flex items-center gap-1"
+                  className="text-xs font-bold text-purple-400 hover:underline active:scale-[0.97] transition-transform duration-150 motion-reduce:transform-none motion-reduce:transition-none flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 rounded"
                 >
                   <span>Luyện ngay</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -527,7 +759,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 ) : (
                   <button
                     onClick={() => handleClaimQuest(3, 40)}
-                    className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs shadow-md"
+                    className="px-3 py-1 bg-amber-500 hover:bg-amber-400 active:scale-[0.97] transition-all duration-150 motion-reduce:transform-none motion-reduce:transition-none text-slate-950 font-black rounded-xl text-xs shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                   >
                     Nhận +40 XP
                   </button>
@@ -535,7 +767,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               ) : (
                 <button
                   onClick={() => onNavigate('flashcards')}
-                  className="text-xs font-bold text-emerald-400 hover:underline flex items-center gap-1"
+                  className="text-xs font-bold text-emerald-400 hover:underline active:scale-[0.97] transition-transform duration-150 motion-reduce:transform-none motion-reduce:transition-none flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded"
                 >
                   <span>Ôn ngay</span>
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -592,7 +824,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               ) : (
                 <button
                   onClick={handleClaimChest}
-                  className="px-6 py-3 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-xl shadow-amber-500/30 transition-all transform hover:scale-105 flex items-center gap-2"
+                  className="px-6 py-3 bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 active:scale-[0.97] text-slate-950 font-black rounded-2xl text-xs sm:text-sm shadow-xl shadow-amber-500/30 transition-all duration-150 hover:scale-[1.02] motion-reduce:transform-none motion-reduce:transition-none flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                 >
                   <Gift className="w-4 h-4" />
                   <span>Mở Rương Báu (+100 XP)</span>
@@ -609,49 +841,80 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
       </div>
 
-      {/* Sổ Bẫy Lỗi Alert Banner */}
+    </div>
+
+      {/* ========================================================================= */}
+      {/* 4. ADAPTIVE INSIGHT (PHIÊN LUYỆN THÍCH ỨNG & PHÂN TÍCH ĐIỂM YẾU)           */}
+      {/* ========================================================================= */}
       {unresolvedMistakes.length > 0 && (
-        <div className="bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border border-rose-500/40 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fadeIn">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
-              <ShieldAlert className="w-6 h-6 animate-pulse" />
+        <div className="bg-gradient-to-r from-rose-950/40 via-slate-900 to-amber-950/30 border border-rose-500/40 rounded-3xl p-5 sm:p-6 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-5 animate-fadeIn">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+              <Sparkles className="w-6 h-6 animate-pulse" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-base sm:text-lg font-black text-white">
-                  Sổ Tay Bẫy Lỗi: <span className="text-rose-400">{unresolvedMistakes.length} từ</span> cần khắc phục
+                  Phiên Luyện Thích Ứng: <span className="text-amber-400">~{adaptiveSession.estimatedMinutes} phút</span>
                 </h3>
                 <span className="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-full text-[10px] font-bold uppercase">
-                  Cần chú ý
+                  {unresolvedMistakes.length} từ bẫy lỗi
                 </span>
+                {recurringMistakes.length > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full text-[10px] font-bold uppercase">
+                    {recurringMistakes.length} từ tái diễn
+                  </span>
+                )}
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Các từ vựng bạn từng bấm "Quên" hoặc làm sai minigame. Ôn đúng 2 lần liên tiếp để tự động giải cứu!
+              <p className="text-xs text-slate-400">
+                Tập trung khắc phục điểm yếu <strong>{adaptiveSession.focusWeakness ? (MISTAKE_TYPE_LABELS[adaptiveSession.focusWeakness] || adaptiveSession.focusWeakness) : 'tổng hợp'}</strong> qua {adaptiveSession.totalExercises} bài tập đề xuất từ bẫy lỗi.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+          <div className="flex items-center gap-2.5 self-end lg:self-auto shrink-0 flex-wrap">
             <button
               onClick={() => onNavigate('mistakes')}
-              className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs transition-all shadow-md flex items-center gap-1.5"
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 active:scale-[0.97] transition-all duration-150 motion-reduce:transform-none motion-reduce:transition-none text-slate-200 border border-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
             >
-              <ShieldAlert className="w-4 h-4" />
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
               <span>Xem Sổ Bẫy Lỗi</span>
             </button>
             <button
-              onClick={() => onNavigate('flashcards')}
-              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
+              onClick={handleStartAdaptiveSession}
+              className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 active:scale-[0.97] text-slate-950 font-black rounded-xl text-xs transition-all duration-150 shadow-lg shadow-amber-500/20 hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
             >
-              <Brain className="w-4 h-4 text-emerald-400" />
-              <span>Ôn Thẻ SRS</span>
+              <Play className="w-4 h-4 fill-slate-950" />
+              <span>Bắt Đầu Luyện Thích Ứng</span>
             </button>
           </div>
         </div>
       )}
 
+      {/* KHU VỰC HỌC THÍCH ỨNG (UNIFIED ADAPTIVE LEARNING HUB) */}
+      {!isNewUser && (
+        <div className="space-y-4">
+          <AdaptiveLearningSummary
+            metrics={metrics}
+            forecast={forecast}
+            leechCount={leechCount}
+            recommendation={adaptiveRecommendation}
+            onOpenDetails={() => setIsAnalyticsModalOpen(true)}
+          />
+
+          <LeechWordsWidget
+            vocabularyList={vocabularyList}
+            srsProgressMap={srsProgressMap}
+            onNavigate={onNavigate}
+          />
+        </div>
+      )}
+
+      {/* FOUR SKILLS ADAPTIVE SUMMARY */}
+      <FourSkillsAdaptiveSummary onNavigate={onNavigate} />
+
       {/* ========================================================================= */}
-      {/* 3. SKILL MASTERY RADAR / STATS & SMART NEXT STEP RECOMMENDATION           */}
+      {/* 5. STATISTICS (NĂNG LỰC 4 KỸ NĂNG, HEATMAP, THÀNH TỰU - LOWER PROMINENCE) */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
@@ -668,76 +931,208 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           <div className="space-y-4">
             {/* Listening */}
             <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold">
+              <div className="flex justify-between items-center text-xs font-bold">
                 <span className="text-cyan-400 flex items-center gap-1.5">
                   <Headphones className="w-3.5 h-3.5" />
                   <span>Luyện Nghe (Listening)</span>
                 </span>
-                <span className="text-slate-300 font-mono">
-                  Level {fourSkills.listening.level} ({fourSkills.listening.score}%)
-                </span>
+                {fourSkills.listening.isAssessed ? (
+                  <span className="flex items-center gap-1.5 font-mono text-slate-300">
+                    <span>Level {fourSkills.listening.level} · {fourSkills.listening.score}%</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                        fourSkills.listening.confidence === 'high'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : fourSkills.listening.confidence === 'medium'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                      title={`Độ tin cậy: ${
+                        fourSkills.listening.confidence === 'high'
+                          ? 'Cao'
+                          : fourSkills.listening.confidence === 'medium'
+                          ? 'Trung bình'
+                          : 'Thấp'
+                      }`}
+                    >
+                      {fourSkills.listening.confidence === 'high'
+                        ? 'Confidence: High'
+                        : fourSkills.listening.confidence === 'medium'
+                        ? 'Confidence: Med'
+                        : 'Confidence: Low'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-slate-500 italic text-xs">Chưa đánh giá</span>
+                )}
               </div>
-              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
+              <div
+                className="w-full bg-slate-950 h-2 rounded-full overflow-hidden"
+                title={
+                  fourSkills.listening.isAssessed
+                    ? `Điểm năng lực tổng thể: ${fourSkills.listening.score}/100`
+                    : 'Chưa có dữ liệu bài tập'
+                }
+              >
                 <div
                   className="bg-cyan-400 h-full rounded-full shadow-sm shadow-cyan-400/50 transition-all duration-500"
-                  style={{ width: `${Math.max(4, fourSkills.listening.score)}%` }}
+                  style={{ width: fourSkills.listening.isAssessed ? `${Math.max(4, fourSkills.listening.score)}%` : '0%' }}
                 />
               </div>
             </div>
 
             {/* Reading */}
             <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold">
+              <div className="flex justify-between items-center text-xs font-bold">
                 <span className="text-emerald-400 flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5" />
                   <span>Luyện Đọc (Reading)</span>
                 </span>
-                <span className="text-slate-300 font-mono">
-                  Level {fourSkills.reading.level} ({fourSkills.reading.score}%)
-                </span>
+                {fourSkills.reading.isAssessed ? (
+                  <span className="flex items-center gap-1.5 font-mono text-slate-300">
+                    <span>Level {fourSkills.reading.level} · {fourSkills.reading.score}%</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                        fourSkills.reading.confidence === 'high'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : fourSkills.reading.confidence === 'medium'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                      title={`Độ tin cậy: ${
+                        fourSkills.reading.confidence === 'high'
+                          ? 'Cao'
+                          : fourSkills.reading.confidence === 'medium'
+                          ? 'Trung bình'
+                          : 'Thấp'
+                      }`}
+                    >
+                      {fourSkills.reading.confidence === 'high'
+                        ? 'Confidence: High'
+                        : fourSkills.reading.confidence === 'medium'
+                        ? 'Confidence: Med'
+                        : 'Confidence: Low'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-slate-500 italic text-xs">Chưa đánh giá</span>
+                )}
               </div>
-              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
+              <div
+                className="w-full bg-slate-950 h-2 rounded-full overflow-hidden"
+                title={
+                  fourSkills.reading.isAssessed
+                    ? `Điểm năng lực tổng thể: ${fourSkills.reading.score}/100`
+                    : 'Chưa có dữ liệu bài tập'
+                }
+              >
                 <div
                   className="bg-emerald-400 h-full rounded-full shadow-sm shadow-emerald-400/50 transition-all duration-500"
-                  style={{ width: `${Math.max(4, fourSkills.reading.score)}%` }}
+                  style={{ width: fourSkills.reading.isAssessed ? `${Math.max(4, fourSkills.reading.score)}%` : '0%' }}
                 />
               </div>
             </div>
 
             {/* Speaking */}
             <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold">
+              <div className="flex justify-between items-center text-xs font-bold">
                 <span className="text-purple-400 flex items-center gap-1.5">
                   <Mic className="w-3.5 h-3.5" />
                   <span>Luyện Nói (Speaking)</span>
                 </span>
-                <span className="text-slate-300 font-mono">
-                  Level {fourSkills.speaking.level} ({fourSkills.speaking.score}%)
-                </span>
+                {fourSkills.speaking.isAssessed ? (
+                  <span className="flex items-center gap-1.5 font-mono text-slate-300">
+                    <span>Level {fourSkills.speaking.level} · {fourSkills.speaking.score}%</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                        fourSkills.speaking.confidence === 'high'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : fourSkills.speaking.confidence === 'medium'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                      title={`Độ tin cậy: ${
+                        fourSkills.speaking.confidence === 'high'
+                          ? 'Cao'
+                          : fourSkills.speaking.confidence === 'medium'
+                          ? 'Trung bình'
+                          : 'Thấp'
+                      }`}
+                    >
+                      {fourSkills.speaking.confidence === 'high'
+                        ? 'Confidence: High'
+                        : fourSkills.speaking.confidence === 'medium'
+                        ? 'Confidence: Med'
+                        : 'Confidence: Low'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-slate-500 italic text-xs">Chưa đánh giá</span>
+                )}
               </div>
-              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
+              <div
+                className="w-full bg-slate-950 h-2 rounded-full overflow-hidden"
+                title={
+                  fourSkills.speaking.isAssessed
+                    ? `Điểm năng lực tổng thể: ${fourSkills.speaking.score}/100`
+                    : 'Chưa có dữ liệu bài tập'
+                }
+              >
                 <div
                   className="bg-purple-400 h-full rounded-full shadow-sm shadow-purple-400/50 transition-all duration-500"
-                  style={{ width: `${Math.max(4, fourSkills.speaking.score)}%` }}
+                  style={{ width: fourSkills.speaking.isAssessed ? `${Math.max(4, fourSkills.speaking.score)}%` : '0%' }}
                 />
               </div>
             </div>
 
             {/* Writing */}
             <div className="space-y-1">
-              <div className="flex justify-between text-xs font-bold">
+              <div className="flex justify-between items-center text-xs font-bold">
                 <span className="text-amber-400 flex items-center gap-1.5">
                   <PenTool className="w-3.5 h-3.5" />
                   <span>Luyện Viết (Writing)</span>
                 </span>
-                <span className="text-slate-300 font-mono">
-                  Level {fourSkills.writing.level} ({fourSkills.writing.score}%)
-                </span>
+                {fourSkills.writing.isAssessed ? (
+                  <span className="flex items-center gap-1.5 font-mono text-slate-300">
+                    <span>Level {fourSkills.writing.level} · {fourSkills.writing.score}%</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                        fourSkills.writing.confidence === 'high'
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                          : fourSkills.writing.confidence === 'medium'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}
+                      title={`Độ tin cậy: ${
+                        fourSkills.writing.confidence === 'high'
+                          ? 'Cao'
+                          : fourSkills.writing.confidence === 'medium'
+                          ? 'Trung bình'
+                          : 'Thấp'
+                      }`}
+                    >
+                      {fourSkills.writing.confidence === 'high'
+                        ? 'Confidence: High'
+                        : fourSkills.writing.confidence === 'medium'
+                        ? 'Confidence: Med'
+                        : 'Confidence: Low'}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-slate-500 italic text-xs">Chưa đánh giá</span>
+                )}
               </div>
-              <div className="w-full bg-slate-950 h-2 rounded-full overflow-hidden">
+              <div
+                className="w-full bg-slate-950 h-2 rounded-full overflow-hidden"
+                title={
+                  fourSkills.writing.isAssessed
+                    ? `Điểm năng lực tổng thể: ${fourSkills.writing.score}/100`
+                    : 'Chưa có dữ liệu bài tập'
+                }
+              >
                 <div
                   className="bg-amber-400 h-full rounded-full shadow-sm shadow-amber-400/50 transition-all duration-500"
-                  style={{ width: `${Math.max(4, fourSkills.writing.score)}%` }}
+                  style={{ width: fourSkills.writing.isAssessed ? `${Math.max(4, fourSkills.writing.score)}%` : '0%' }}
                 />
               </div>
             </div>
@@ -789,7 +1184,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
             <button
               onClick={() => onNavigate(recommendation.tab)}
-              className={`w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r ${recommendation.color} text-slate-950 font-black rounded-2xl shadow-xl transition-all transform hover:scale-105 flex items-center justify-center gap-2 text-xs sm:text-sm`}
+              className={`w-full sm:w-auto px-7 py-3.5 bg-gradient-to-r ${recommendation.color} text-slate-950 font-black rounded-2xl shadow-xl transition-all duration-150 active:scale-[0.97] hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none flex items-center justify-center gap-2 text-xs sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400`}
             >
               <span>Tiếp Tục Chặng Học Tiếp Theo 🚀</span>
               <ArrowRight className="w-4 h-4" />
@@ -840,7 +1235,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   key={ach.id}
                   onClick={() => setIsAchievementsModalOpen(true)}
                   title={`${ach.title}: ${ach.description} (Thưởng: +${ach.xpReward} XP)`}
-                  className={`p-3 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] transition-all cursor-pointer border ${
+                  className={`p-3 rounded-2xl flex flex-col justify-between group hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 motion-reduce:transform-none motion-reduce:transition-none cursor-pointer border ${
                     ach.isUnlocked
                       ? 'bg-gradient-to-br from-amber-500/15 via-slate-950 to-slate-900 border-amber-500/40 shadow-sm hover:shadow-amber-500/20'
                       : 'bg-slate-950/80 border-slate-800/80 opacity-75 hover:opacity-100'
@@ -910,6 +1305,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <AchievementsModal
         isOpen={isAchievementsModalOpen}
         onClose={() => setIsAchievementsModalOpen(false)}
+      />
+
+      {/* Modal Phân Tích Thích Ứng Toàn Diện (SRSAnalyticsModal) */}
+      <SRSAnalyticsModal
+        isOpen={isAnalyticsModalOpen}
+        onClose={() => setIsAnalyticsModalOpen(false)}
       />
 
     </div>
