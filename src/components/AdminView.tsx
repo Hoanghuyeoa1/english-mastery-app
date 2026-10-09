@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -19,6 +19,14 @@ import {
   X,
   AlertTriangle,
   RotateCcw,
+  Copy,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Flame,
 } from 'lucide-react';
 import { useIsAdmin } from '../utils/adminAuth';
 import { useCloudSyncStore } from '../services/cloudSyncService';
@@ -33,6 +41,12 @@ import {
   resetTargetUsersProgress,
 } from '../services/adminVocabService';
 import { speakWord } from '../services/speechService';
+import {
+  adminUserApi,
+  type AdminUserItem,
+  type AdminUserSortField,
+  type SortDirection,
+} from '../services/api/adminUserApi';
 import type { CloudVocabulary, AdminUserProfile, ActiveTab, VocabTag } from '../types';
 
 interface AdminViewProps {
@@ -70,6 +84,23 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
   const [targetResetUser, setTargetResetUser] = useState<{ id: string; name: string } | null>(null);
   const [isTargetResetModalOpen, setIsTargetResetModalOpen] = useState(false);
   const [isProcessingTargetReset, setIsProcessingTargetReset] = useState(false);
+
+  // Server-side Users Query State (Phase 4)
+  const [usersList, setUsersList] = useState<AdminUserItem[]>([]);
+  const [usersTotalCount, setUsersTotalCount] = useState(0);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersPageSize, setUsersPageSize] = useState(10);
+  const [usersTotalPages, setUsersTotalPages] = useState(0);
+  const [usersHasPrev, setUsersHasPrev] = useState(false);
+  const [usersHasNext, setUsersHasNext] = useState(false);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+
+  // Search, Sort & Copy State
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [usersSortBy, setUsersSortBy] = useState<AdminUserSortField>('createdAt');
+  const [usersSortOrder, setUsersSortOrder] = useState<SortDirection>('desc');
+  const [copiedAccountId, setCopiedAccountId] = useState<number | null>(null);
 
   // Cloud data state
   const [cloudVocabs, setCloudVocabs] = useState<CloudVocabulary[]>([]);
@@ -276,6 +307,7 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
           message: `Đã reset tiến trình của ${idsToReset.length} tài khoản thành công!`,
         });
         loadData();
+        fetchUsers();
       }
     } else {
       setFeedback({
@@ -285,43 +317,107 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
     }
   };
 
+  // Debounce user search by 350ms & reset page to 1
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(userSearchTerm);
+      setUsersPage(1);
+    }, 350);
+
+    return () => clearTimeout(handler);
+  }, [userSearchTerm]);
+
+  // Server-side Users Fetcher with AbortController and Stale Request Prevention
+  const fetchUsers = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!isAdmin) return;
+      setIsUsersLoading(true);
+      setUsersError(null);
+
+      try {
+        const response = await adminUserApi.queryUsers(
+          {
+            search: debouncedSearch,
+            sortBy: usersSortBy,
+            sortOrder: usersSortOrder,
+            page: usersPage,
+            pageSize: usersPageSize,
+          },
+          signal
+        );
+
+        setUsersList(response.items);
+        setUsersTotalCount(response.totalCount);
+        setUsersTotalPages(response.totalPages);
+        setUsersHasPrev(response.hasPreviousPage);
+        setUsersHasNext(response.hasNextPage);
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          return; // Ignore cancelled stale request
+        }
+        const msg = err instanceof Error ? err.message : 'Lỗi lấy danh sách học viên từ máy chủ';
+        setUsersError(msg);
+      } finally {
+        setIsUsersLoading(false);
+      }
+    },
+    [isAdmin, debouncedSearch, usersSortBy, usersSortOrder, usersPage, usersPageSize]
+  );
+
+  useEffect(() => {
+    if (activeAdminTab === 'users' && isAdmin) {
+      const controller = new AbortController();
+      fetchUsers(controller.signal);
+      return () => controller.abort();
+    }
+  }, [activeAdminTab, isAdmin, fetchUsers]);
+
+  const handleCopyAccountId = async (accountId: number) => {
+    try {
+      await navigator.clipboard.writeText(accountId.toString().padStart(6, '0'));
+      setCopiedAccountId(accountId);
+      setTimeout(() => setCopiedAccountId(null), 1800);
+    } catch (e) {
+      console.warn('Clipboard copy failed:', e);
+    }
+  };
+
+  const handleSortClick = (field: AdminUserSortField) => {
+    if (usersSortBy === field) {
+      setUsersSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setUsersSortBy(field);
+      setUsersSortOrder(field === 'displayName' ? 'asc' : 'desc');
+    }
+    setUsersPage(1);
+  };
+
+  const renderSortIndicator = (field: AdminUserSortField) => {
+    if (usersSortBy !== field) {
+      return (
+        <ArrowUpDown className="w-3.5 h-3.5 text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity" />
+      );
+    }
+    return usersSortOrder === 'asc' ? (
+      <ArrowUp className="w-3.5 h-3.5 text-emerald-400" />
+    ) : (
+      <ArrowDown className="w-3.5 h-3.5 text-emerald-400" />
+    );
+  };
+
   const toggleSelectUser = (id: string) => {
     setSelectedUserIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
   };
 
-  const displayProfiles = useMemo(() => {
-    let list = [...profiles];
-
-    if (currentUserId && !list.some((p) => p.id === currentUserId)) {
-      list.unshift({
-        id: currentUserId,
-        display_name: userEmail ? `${userEmail} (Admin)` : 'Current Admin',
-        level: useAppStore.getState().profile.level || 1,
-        xp: useAppStore.getState().profile.xp || 0,
-        streak: useAppStore.getState().profile.streak ?? 0,
-        updated_at: new Date().toISOString(),
-      });
-    }
-
-    if (userSearchTerm.trim()) {
-      const q = userSearchTerm.trim().toLowerCase();
-      list = list.filter(
-        (p) =>
-          (p.display_name && p.display_name.toLowerCase().includes(q)) ||
-          p.id.toLowerCase().includes(q)
-      );
-    }
-
-    return list;
-  }, [profiles, userEmail, currentUserId, userSearchTerm]);
-
-  const toggleSelectAllUsers = () => {
-    if (selectedUserIds.length === displayProfiles.length && displayProfiles.length > 0) {
-      setSelectedUserIds([]);
+  const toggleSelectAllCurrentPage = () => {
+    const pageIds = usersList.map((u) => u.id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selectedUserIds.includes(id));
+    if (allSelected) {
+      setSelectedUserIds((prev) => prev.filter((id) => !pageIds.includes(id)));
     } else {
-      setSelectedUserIds(displayProfiles.map((p) => p.id));
+      setSelectedUserIds((prev) => Array.from(new Set([...prev, ...pageIds])));
     }
   };
 
@@ -818,148 +914,408 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
       {/* ========================================================================= */}
       {activeAdminTab === 'users' && (
         <div className="p-6 sm:p-8 bg-slate-900/90 border border-slate-800 rounded-3xl space-y-6">
+          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
             <div>
               <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-                <span>Quản Lý Học Viên & Tiến Trình Học (`profiles`)</span>
-                <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-xs font-bold rounded-full">
-                  {displayProfiles.length} tài khoản
+                <span>Quản Lý Học Viên & Tài Khoản</span>
+                <span className="px-2.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold rounded-full">
+                  {usersTotalCount} học viên
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                Theo dõi dữ liệu và Reset tiến trình học cho từng tài khoản hoặc nhiều tài khoản cùng lúc.
+                Số liệu học tập thực tế từ máy chủ. Hỗ trợ tìm kiếm, sắp xếp đa chiều và phân trang.
               </p>
             </div>
 
-            {selectedUserIds.length > 0 && (
+            <div className="flex items-center gap-2.5 flex-wrap">
               <button
-                onClick={() => {
-                  setTargetResetUser(null);
-                  setIsTargetResetModalOpen(true);
-                }}
-                className="px-4 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-rose-600/30 transition-all flex items-center gap-2 active:scale-95 shrink-0"
+                onClick={() => fetchUsers()}
+                disabled={isUsersLoading}
+                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white font-bold text-xs rounded-xl border border-slate-700/60 transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                title="Làm mới dữ liệu từ server"
               >
-                <RotateCcw className="w-4 h-4" />
-                <span>Reset {selectedUserIds.length} tài khoản đã chọn</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${isUsersLoading ? 'animate-spin text-emerald-400' : ''}`} />
+                <span>Làm mới</span>
               </button>
-            )}
+
+              {selectedUserIds.length > 0 && (
+                <button
+                  onClick={() => {
+                    setTargetResetUser(null);
+                    setIsTargetResetModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-rose-600/30 transition-all flex items-center gap-2 active:scale-95 cursor-pointer shrink-0"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span>Reset {selectedUserIds.length} tài khoản đã chọn</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* Search bar & Bulk Selection Indicator */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          {/* Search, Sort & Filter Toolbar */}
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            {/* Search Input */}
             <div className="relative flex-1 max-w-md">
               <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={userSearchTerm}
                 onChange={(e) => setUserSearchTerm(e.target.value)}
-                placeholder="Tìm kiếm tài khoản theo tên hoặc email..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs sm:text-sm text-slate-200 placeholder-slate-500 outline-none transition-colors"
+                placeholder="Tìm theo tên học viên, email hoặc mã 6 số..."
+                className="w-full pl-10 pr-9 py-2.5 bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl text-xs sm:text-sm text-slate-200 placeholder-slate-500 outline-none transition-colors"
               />
+              {userSearchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setUserSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-white"
+                  title="Xóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            <div className="text-xs text-slate-400 flex items-center gap-2">
-              <span>Đã chọn: <strong className="text-white">{selectedUserIds.length}</strong> / {displayProfiles.length}</span>
-              {selectedUserIds.length > 0 && (
-                <button
-                  onClick={() => setSelectedUserIds([])}
-                  className="text-slate-400 hover:text-white underline text-[11px]"
+            {/* Sort Controls & Page Size */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              {/* Sort By Selector */}
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs">
+                <span className="text-slate-500 font-semibold hidden sm:inline">Sắp xếp:</span>
+                <select
+                  value={usersSortBy}
+                  onChange={(e) => {
+                    setUsersSortBy(e.target.value as AdminUserSortField);
+                    setUsersPage(1);
+                  }}
+                  className="bg-transparent text-slate-300 font-bold outline-none cursor-pointer text-xs"
                 >
-                  Bỏ chọn
-                </button>
+                  <option value="createdAt" className="bg-slate-900 text-slate-200">Mới nhất (Ngày tạo)</option>
+                  <option value="level" className="bg-slate-900 text-slate-200">Cấp độ (Level)</option>
+                  <option value="xp" className="bg-slate-900 text-slate-200">Điểm kinh nghiệm (XP)</option>
+                  <option value="streak" className="bg-slate-900 text-slate-200">Chuỗi học tập (Streak)</option>
+                  <option value="displayName" className="bg-slate-900 text-slate-200">Tên học viên</option>
+                  <option value="publicAccountId" className="bg-slate-900 text-slate-200">Mã học viên (6 số)</option>
+                  <option value="email" className="bg-slate-900 text-slate-200">Email</option>
+                </select>
+              </div>
+
+              {/* Sort Order Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  setUsersSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+                  setUsersPage(1);
+                }}
+                className="px-2.5 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
+                title={`Chiều sắp xếp: ${usersSortOrder === 'asc' ? 'Tăng dần' : 'Giảm dần'}`}
+              >
+                {usersSortOrder === 'asc' ? (
+                  <>
+                    <ArrowUp className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Tăng dần</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowDown className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Giảm dần</span>
+                  </>
+                )}
+              </button>
+
+              {/* Page Size Selector */}
+              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-400">
+                <span className="hidden sm:inline">Hiển thị:</span>
+                <select
+                  value={usersPageSize}
+                  onChange={(e) => {
+                    setUsersPageSize(Number(e.target.value));
+                    setUsersPage(1);
+                  }}
+                  className="bg-transparent text-slate-300 font-bold outline-none cursor-pointer text-xs"
+                >
+                  <option value={10} className="bg-slate-900 text-slate-200">10 / trang</option>
+                  <option value={20} className="bg-slate-900 text-slate-200">20 / trang</option>
+                  <option value={50} className="bg-slate-900 text-slate-200">50 / trang</option>
+                </select>
+              </div>
+
+              {/* Selection Counter */}
+              {selectedUserIds.length > 0 && (
+                <div className="text-xs text-slate-400 flex items-center gap-2 pl-1">
+                  <span>Đã chọn: <strong className="text-white">{selectedUserIds.length}</strong></span>
+                  <button
+                    onClick={() => setSelectedUserIds([])}
+                    className="text-slate-400 hover:text-white underline text-[11px] cursor-pointer"
+                  >
+                    Bỏ chọn
+                  </button>
+                </div>
               )}
             </div>
           </div>
 
+          {/* Error Banner if any */}
+          {usersError && (
+            <div className="p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-xs text-rose-300 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{usersError}</span>
+              </div>
+              <button
+                onClick={() => fetchUsers()}
+                className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs transition-colors shrink-0"
+              >
+                Thử lại
+              </button>
+            </div>
+          )}
+
           {/* Users Table */}
           <div className="overflow-x-auto border border-slate-800 rounded-2xl">
-            <table className="w-full text-left border-collapse text-xs sm:text-sm">
+            <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[760px]">
               <thead>
                 <tr className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[11px]">
                   <th className="p-3.5 w-10 text-center">
                     <input
                       type="checkbox"
-                      checked={selectedUserIds.length > 0 && selectedUserIds.length === displayProfiles.length}
-                      onChange={toggleSelectAllUsers}
+                      checked={
+                        usersList.length > 0 &&
+                        usersList.every((u) => selectedUserIds.includes(u.id))
+                      }
+                      onChange={toggleSelectAllCurrentPage}
                       className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                      title="Chọn tất cả tài khoản"
+                      title="Chọn tất cả tài khoản trên trang này"
                     />
                   </th>
-                  <th className="p-3.5">Học Viên / Email</th>
-                  <th className="p-3.5">Cấp Độ & XP</th>
-                  <th className="p-3.5">Chuỗi Streak</th>
-                  <th className="p-3.5">ID Tài Khoản</th>
+                  <th
+                    className="p-3.5 cursor-pointer hover:text-white transition-colors group"
+                    onClick={() => handleSortClick('displayName')}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Học Viên / Email</span>
+                      {renderSortIndicator('displayName')}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3.5 cursor-pointer hover:text-white transition-colors group"
+                    onClick={() => handleSortClick('level')}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Cấp Độ & XP</span>
+                      {usersSortBy === 'level' || usersSortBy === 'xp' ? (
+                        renderSortIndicator(usersSortBy)
+                      ) : (
+                        renderSortIndicator('level')
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3.5 cursor-pointer hover:text-white transition-colors group"
+                    onClick={() => handleSortClick('streak')}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Chuỗi Streak</span>
+                      {renderSortIndicator('streak')}
+                    </div>
+                  </th>
+                  <th
+                    className="p-3.5 cursor-pointer hover:text-white transition-colors group"
+                    onClick={() => handleSortClick('publicAccountId')}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span>Mã Tài Khoản</span>
+                      {renderSortIndicator('publicAccountId')}
+                    </div>
+                  </th>
+                  <th className="p-3.5">Trạng Thái</th>
                   <th className="p-3.5 text-right">Hành Động</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {displayProfiles.length === 0 ? (
+                {isUsersLoading && usersList.length === 0 ? (
+                  // Skeleton Loading Rows
+                  Array.from({ length: 5 }).map((_, idx) => (
+                    <tr key={`skeleton-${idx}`} className="animate-pulse">
+                      <td className="p-3.5 text-center">
+                        <div className="w-4 h-4 bg-slate-800 rounded mx-auto" />
+                      </td>
+                      <td className="p-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-slate-800 shrink-0" />
+                          <div className="space-y-1.5 flex-1">
+                            <div className="h-3.5 bg-slate-800 rounded w-28" />
+                            <div className="h-2.5 bg-slate-850 rounded w-40" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-4 bg-slate-800 rounded w-20" />
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-4 bg-slate-800 rounded w-16" />
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-6 bg-slate-800 rounded w-20" />
+                      </td>
+                      <td className="p-3.5">
+                        <div className="h-5 bg-slate-800 rounded w-16" />
+                      </td>
+                      <td className="p-3.5 text-right">
+                        <div className="h-7 bg-slate-800 rounded w-28 ml-auto" />
+                      </td>
+                    </tr>
+                  ))
+                ) : usersList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-slate-500">
-                      Không tìm thấy tài khoản nào khớp với từ khóa tìm kiếm.
+                    <td colSpan={7} className="p-10 text-center text-slate-500 space-y-2">
+                      <p className="text-sm">
+                        {userSearchTerm.trim()
+                          ? `Không tìm thấy học viên nào khớp với "${userSearchTerm.trim()}".`
+                          : 'Chưa có dữ liệu học viên trong hệ thống.'}
+                      </p>
+                      {userSearchTerm.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => setUserSearchTerm('')}
+                          className="text-xs font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                        >
+                          Xóa bộ lọc tìm kiếm
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ) : (
-                  displayProfiles.map((p) => {
-                    const isSelected = selectedUserIds.includes(p.id);
+                  usersList.map((u) => {
+                    const isSelected = selectedUserIds.includes(u.id);
                     const isThisAdmin =
-                      p.id === currentUserId ||
-                      (p.display_name && p.display_name.includes('(Admin)'));
+                      u.id === currentUserId ||
+                      u.roles.includes(AppRoles.Admin) ||
+                      (u.displayName && u.displayName.includes('(Admin)'));
 
                     return (
                       <tr
-                        key={p.id}
+                        key={u.id}
                         className={`transition-colors ${
-                          isSelected ? 'bg-rose-500/10' : 'hover:bg-slate-850/40'
+                          isSelected
+                            ? 'bg-rose-500/10 border-l-2 border-rose-500'
+                            : 'hover:bg-slate-850/40'
                         }`}
                       >
+                        {/* Checkbox */}
                         <td className="p-3.5 text-center">
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => toggleSelectUser(p.id)}
+                            onChange={() => toggleSelectUser(u.id)}
                             className="rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
                           />
                         </td>
 
-                        <td className="p-3.5 font-bold text-white">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0">
-                              {(p.display_name || 'U').charAt(0).toUpperCase()}
+                        {/* Học Viên & Email */}
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-emerald-400 shrink-0">
+                              {(u.displayName || u.email || 'U').charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <span className="truncate max-w-[180px] sm:max-w-xs">{p.display_name || 'Học viên'}</span>
+                                <span className="font-bold text-white truncate max-w-[180px] sm:max-w-xs">
+                                  {u.displayName || (
+                                    <span className="text-slate-400 italic font-normal">Chưa cập nhật</span>
+                                  )}
+                                </span>
                                 {isThisAdmin && (
-                                  <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded-md shrink-0">
+                                  <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold rounded-md shrink-0">
                                     Admin 👑
                                   </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-400 font-mono truncate max-w-[200px] sm:max-w-xs mt-0.5">
+                                {u.email || (
+                                  <span className="italic text-slate-500 font-sans">Chưa cập nhật</span>
                                 )}
                               </div>
                             </div>
                           </div>
                         </td>
 
-                        <td className="p-3.5 font-semibold text-amber-300">
-                          Cấp {p.level || 1} • {p.xp || 0} XP
+                        {/* Cấp Độ & XP */}
+                        <td className="p-3.5">
+                          <div className="flex flex-col gap-0.5">
+                            <div className="inline-flex items-center gap-1.5">
+                              <span className="px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 text-amber-300 rounded-md text-xs font-black">
+                                Cấp {u.level}
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-300 font-semibold">
+                              {u.xp.toLocaleString()} XP
+                            </span>
+                          </div>
                         </td>
 
-                        <td className="p-3.5 font-bold text-orange-400">
-                          {p.streak ?? 0} ngày 🔥
+                        {/* Chuỗi Streak */}
+                        <td className="p-3.5">
+                          <div className="inline-flex items-center gap-1.5 font-bold text-orange-400">
+                            <Flame className="w-4 h-4 text-orange-500 shrink-0" />
+                            <span>{u.streak} ngày</span>
+                          </div>
                         </td>
 
-                        <td className="p-3.5 font-mono text-slate-500 text-xs truncate max-w-[120px]" title={p.id}>
-                          {p.id}
+                        {/* Mã Tài Khoản (6 số & copy) */}
+                        <td className="p-3.5">
+                          <div className="inline-flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-black px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-emerald-400 tracking-wider">
+                              {u.publicAccountId.toString().padStart(6, '0')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyAccountId(u.publicAccountId)}
+                              className="p-1.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                              title="Sao chép mã tài khoản 6 chữ số"
+                              aria-label={`Sao chép mã tài khoản ${u.publicAccountId}`}
+                            >
+                              {copiedAccountId === u.publicAccountId ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
                         </td>
 
+                        {/* Trạng Thái */}
+                        <td className="p-3.5">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                              u.status === 'Locked'
+                                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                u.status === 'Locked' ? 'bg-rose-400' : 'bg-emerald-400'
+                              }`}
+                            />
+                            <span>{u.status === 'Locked' ? 'Bị khóa' : 'Hoạt động'}</span>
+                          </span>
+                        </td>
+
+                        {/* Hành Động (Reset Tiến Trình) */}
                         <td className="p-3.5 text-right">
                           <button
+                            type="button"
                             onClick={() => {
-                              setTargetResetUser({ id: p.id, name: p.display_name || p.id });
+                              setTargetResetUser({
+                                id: u.id,
+                                name: u.displayName || u.email || `Học viên #${u.publicAccountId}`,
+                              });
                               setIsTargetResetModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95"
-                            title={`Reset tiến trình của ${p.display_name}`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                            title={`Reset tiến trình học của ${u.displayName || u.email}`}
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             <span>Reset Tiến Trình</span>
@@ -971,6 +1327,49 @@ export const AdminView: React.FC<AdminViewProps> = ({ onNavigate, onOpenAuth }) 
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-slate-800/60 text-xs text-slate-400">
+            <div>
+              {usersTotalCount > 0 ? (
+                <span>
+                  Hiển thị <strong className="text-white">{(usersPage - 1) * usersPageSize + 1}</strong> -{' '}
+                  <strong className="text-white">
+                    {Math.min(usersPage * usersPageSize, usersTotalCount)}
+                  </strong>{' '}
+                  trong <strong className="text-white">{usersTotalCount}</strong> học viên
+                </span>
+              ) : (
+                <span>0 học viên</span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setUsersPage((p) => Math.max(1, p - 1))}
+                disabled={!usersHasPrev || isUsersLoading}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Trang trước</span>
+              </button>
+
+              <span className="px-3 py-1 text-slate-300 font-bold bg-slate-950 border border-slate-800 rounded-lg">
+                Trang {usersPage} / {usersTotalPages || 1}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setUsersPage((p) => p + 1)}
+                disabled={!usersHasNext || isUsersLoading}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-750 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <span>Trang sau</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       )}

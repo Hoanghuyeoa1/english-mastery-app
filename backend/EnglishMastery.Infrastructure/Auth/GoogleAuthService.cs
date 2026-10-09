@@ -23,6 +23,7 @@ public class GoogleAuthService : IGoogleAuthService
     private readonly UserManager<AppUser> _userManager;
     private readonly AppDbContext _dbContext;
     private readonly ILogger<GoogleAuthService> _logger;
+    private readonly IPublicAccountIdAllocator _idAllocator;
 
     public GoogleAuthService(
         IOptions<GoogleOAuthOptions> options,
@@ -33,6 +34,7 @@ public class GoogleAuthService : IGoogleAuthService
         IAuthService authService,
         UserManager<AppUser> userManager,
         AppDbContext dbContext,
+        IPublicAccountIdAllocator idAllocator,
         ILogger<GoogleAuthService> logger)
     {
         _options = options.Value;
@@ -43,6 +45,7 @@ public class GoogleAuthService : IGoogleAuthService
         _authService = authService;
         _userManager = userManager;
         _dbContext = dbContext;
+        _idAllocator = idAllocator;
         _logger = logger;
     }
 
@@ -266,15 +269,6 @@ public class GoogleAuthService : IGoogleAuthService
                 }
 
                 // First Google Login: Tạo tài khoản mới hoàn toàn với vai trò USER mặc định
-                var newUser = new AppUser
-                {
-                    Id = Guid.NewGuid(),
-                    UserName = payload.Email,
-                    Email = payload.Email,
-                    DisplayName = !string.IsNullOrWhiteSpace(payload.Name) ? payload.Name : payload.Email.Split('@')[0],
-                    CreatedAt = DateTime.UtcNow
-                };
-
                 AppUser? resolvedUser = null;
                 var strategy = _dbContext.Database.CreateExecutionStrategy();
                 await strategy.ExecuteAsync(async () =>
@@ -282,6 +276,18 @@ public class GoogleAuthService : IGoogleAuthService
                     await using var transaction = await _dbContext.Database.BeginTransactionAsync(ct);
                     try
                     {
+                        var publicAccountId = await _idAllocator.AllocateNextIdAsync(ct);
+
+                        var newUser = new AppUser
+                        {
+                            Id = Guid.NewGuid(),
+                            PublicAccountId = publicAccountId,
+                            UserName = payload.Email,
+                            Email = payload.Email,
+                            DisplayName = !string.IsNullOrWhiteSpace(payload.Name) ? payload.Name : payload.Email.Split('@')[0],
+                            CreatedAt = DateTime.UtcNow
+                        };
+
                         var createResult = await _userManager.CreateAsync(newUser);
                         if (!createResult.Succeeded)
                         {
@@ -293,6 +299,7 @@ public class GoogleAuthService : IGoogleAuthService
                         var profile = new UserProfile
                         {
                             Id = newUser.Id,
+                            PublicAccountId = publicAccountId,
                             DisplayName = newUser.DisplayName,
                             Level = 1,
                             Xp = 0,

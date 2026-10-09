@@ -4,6 +4,7 @@ namespace EnglishMastery.Domain.Entities;
 
 public class AppUser : IdentityUser<Guid>
 {
+    public int PublicAccountId { get; set; }
     public string DisplayName { get; set; } = "Học viên ẩn danh";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

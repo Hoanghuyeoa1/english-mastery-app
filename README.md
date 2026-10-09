@@ -1286,5 +1286,65 @@ Loại bỏ hoàn toàn cơ chế tự phong Admin dựa trên email hoặc tài
 - **Last-Admin Protection:** Hệ thống từ chối thu hồi quyền của Quản trị viên cuối cùng trừ khi có cờ tường minh `--force`, chống tình trạng vô tình khóa hệ thống.
 - **Trạng thái Database không có Admin:** Hệ thống vẫn hoạt động hoàn toàn bình thường khi database chưa có tài khoản ADMIN nào. Quy trình tạo Admin đầu tiên (First Admin Bootstrap): Đăng ký tài khoản bình thường $\rightarrow$ Operator chạy `admin-tool.ps1 grant <email>` $\rightarrow$ Người dùng đăng nhập lại nhận quyền ADMIN.
 
+---
+
+## 7. Canonical Access State, Welcome Gate & Identity Isolation Architecture (v1.6.0)
+
+### 7.1. Máy Trạng Thái Quyền Truy Cập Chính Tắc (Canonical Access State Machine)
+Hệ thống quản lý trạng thái truy cập ứng dụng dựa trên máy trạng thái hữu hạn (FSM) tập trung tại [`App.tsx`](src/App.tsx), triệt tiêu hoàn toàn các điều kiện rẽ nhánh ngầm hoặc phụ thuộc lẫn nhau:
+
+```mermaid
+stateDiagram-v2
+    [*] --> initializing: Khởi tạo App & Rehydration
+    
+    initializing --> welcome: Chưa đăng nhập & Chưa chọn Guest
+    initializing --> guest: Có cờ Guest phiên tab (sessionStorage)
+    initializing --> authenticated: Backend xác minh token thành công (/api/auth/me)
+    initializing --> auth_unavailable: Có token nhưng Backend offline / Network Error
+    
+    welcome --> guest: Click "Tiếp tục học mà không cần tài khoản"
+    welcome --> authenticated: Đăng nhập Email / Google OAuth thành công
+    
+    guest --> welcome: Quay lại trang Chào mừng / Kết thúc phiên
+    guest --> authenticated: Đăng nhập từ modal trong phiên Guest
+    
+    auth_unavailable --> initializing: Bấm "Thử kết nối lại" (Retry)
+    auth_unavailable --> guest: Bấm "Tiếp tục học với vai trò Khách"
+    auth_unavailable --> welcome: Bấm "Đến trang Đăng nhập / Chào mừng"
+    
+    authenticated --> welcome: Đăng xuất (signOutCloud)
+```
+
+| Trạng Thái (`AppAccessState`) | Điều Kiện Kích Hoạt | Giao Diện Hiển Thị | Quyền Hạn Dữ Liệu |
+| :--- | :--- | :--- | :--- |
+| `initializing` | Chưa hoàn tất rehydration lưu trữ hoặc kiểm tra auth ban đầu | Màn hình tải trung tính, hiệu ứng hạt phát sáng | Không hiển thị dữ liệu |
+| `welcome` | Chưa đăng nhập và chưa chủ động chọn Guest (kể cả khi có XP/Profile cũ trong máy) | Cổng chào đón EdTech Dark Glassmorphism, Form Đăng nhập/Đăng ký | Không cấp quyền Dashboard |
+| `auth_unavailable` | Có token lưu trữ nhưng backend mất kết nối hoặc 5xx/Network Error | Cảnh báo mất kết nối an toàn với tùy chọn Thử lại hoặc vào Khách | Không cấp quyền giả mạo |
+| `guest` | Người dùng chủ động click "Tiếp tục học mà không cần tài khoản" | Onboarding (nếu mới) hoặc Dashboard (nếu đã có profile) | Đọc/ghi khe dữ liệu Khách (`emh_guest_slot`) |
+| `authenticated` | Backend ASP.NET Core xác thực thành công qua `/api/auth/me` | Dashboard / Onboarding theo thông tin tài khoản | Đọc/ghi khe dữ liệu theo UserId (`emh_user_slot_<id>`) |
+
+### 7.2. Các Bất Biến Cốt Lõi (Core Invariants)
+1. **Dữ liệu học tập $\neq$ Danh tính xác thực (Learning Data $\neq$ Auth Identity):** Sự tồn tại của XP, Streak, Level hay lịch sử học tập trong `localStorage` không phải bằng chứng để cấp quyền vào Dashboard.
+2. **Khách là hành động chủ động (Guest is an explicit choice):** Chế độ Khách chỉ được kích hoạt khi người dùng bấm trực tiếp nút *"Tiếp tục học mà không cần tài khoản"*. Tuyệt đối không tự suy diễn thành Khách lúc app mount, reload hay khi backend offline.
+3. **Bảo toàn dữ liệu đa danh tính qua Slotting ([`dataOwnershipManager.ts`](src/store/dataOwnershipManager.ts)):**
+   - **Khách:** Lưu trữ độc lập trong slot `emh_guest_slot`.
+   - **Tài khoản xác thực:** Lưu trữ độc lập trong slot `emh_user_slot_<userId>`.
+   - **Dữ liệu cũ chưa gán quyền sở hữu:** Sao lưu an toàn vào `emh_legacy_unassigned_backup`.
+   - Khi chuyển đổi giữa Khách $\leftrightarrow$ User A $\leftrightarrow$ User B, hệ thống tự động lưu trữ (archive) slot hiện tại trước khi khôi phục slot mới. **Không bao giờ gọi `localStorage.clear()`** và **không tự động gộp (auto-merge)** dữ liệu giữa các danh tính.
+4. **Vòng đời phiên Khách (Guest Session Lifecycle):**
+   - Lưu trữ trong `sessionStorage` (`emh_guest_session_active`).
+   - F5 trong cùng tab: Duy trì trạng thái Khách.
+   - Mở tab mới hoặc mở lại trình duyệt: Hiển thị cổng Chào mừng Welcome.
+   - Bấm quay lại Welcome: Kết thúc phiên Khách, bảo toàn nguyên vẹn tiến trình học cục bộ.
+
+### 7.3. Đồng Bộ Môi Trường (Dev, Unified & Vercel Consistency)
+- **Development (`localhost:5173`):** Kết nối backend ASP.NET Core tại `http://localhost:5000/api`.
+- **Unified Hosting (`localhost:5000`):** Single-origin, static assets phục vụ từ `wwwroot`, API base tương đối `/api`.
+- **Vercel Production:** Triển khai **Frontend-Only** với API base tương đối `/api`. File cấu hình [`vercel.json`](vercel.json) bảo đảm:
+  - Route `/api/(.*)` được giữ nguyên tới `/api/$1`, không bị SPA rewrite cướp đường dẫn.
+  - Header `Cache-Control: no-cache, no-store, must-revalidate` cho `/index.html` và `/sw.js`, triệt tiêu hoàn toàn hiện tượng kẹt phiên bản bundle cũ trên trình duyệt người dùng.
+  - Workbox cấu hình `cleanupOutdatedCaches: true` dọn dẹp cache cũ khi Service Worker mới kích hoạt.
+
+
 
 

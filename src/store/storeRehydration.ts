@@ -23,6 +23,7 @@ import {
 import { composeVocabularyList } from './vocabularyComposer';
 import { getVietnamDateString } from '../utils/dateUtils';
 import { reconcileHistoricalStreak } from '../services/streakReconciliationService';
+import { isGuestSessionActive } from './guestSessionStorage';
 
 export function partializeAppStore(state: AppStoreState) {
   return {
@@ -55,7 +56,6 @@ export function partializeAppStore(state: AppStoreState) {
     processedMistakeKeys: (state.processedMistakeKeys || []).slice(-200),
     levelCertifications: sanitizeLevelCertifications(state.levelCertifications),
     checkpointHistory: sanitizeCheckpointHistory(state.checkpointHistory),
-    isGuestMode: state.isGuestMode ?? false,
   };
 }
 
@@ -66,13 +66,13 @@ export function handleStoreRehydration(
   if (!state) return;
 
   state.isHydrated = true;
-  if (typeof state.isGuestMode !== 'boolean') {
-    state.isGuestMode = false;
-  }
+  // Guest session is strictly session-scoped (sessionStorage), never restored from localStorage
+  const activeGuestSession = isGuestSessionActive();
+  state.isGuestMode = activeGuestSession;
   state.isLoggedOut = false;
   if (asyncUpdater && typeof queueMicrotask !== 'undefined') {
     queueMicrotask(() => {
-      asyncUpdater({ isHydrated: true, isGuestMode: state.isGuestMode, isLoggedOut: false });
+      asyncUpdater({ isHydrated: true, isGuestMode: activeGuestSession, isLoggedOut: false });
     });
   }
 

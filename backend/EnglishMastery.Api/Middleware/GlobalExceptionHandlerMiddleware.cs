@@ -85,6 +85,10 @@ public class GlobalExceptionHandlerMiddleware
                 (int)HttpStatusCode.Conflict,
                 new ErrorResponse(confEx.Code, confEx.Message, confEx.Details)
             ),
+            PublicAccountIdExhaustedException exhEx => (
+                (int)HttpStatusCode.Conflict,
+                new ErrorResponse(exhEx.Code, exhEx.Message, exhEx.Details)
+            ),
             TimeoutException => (
                 (int)HttpStatusCode.RequestTimeout,
                 new ErrorResponse("TIMEOUT", "Yêu cầu máy chủ quá thời gian phản hồi.")

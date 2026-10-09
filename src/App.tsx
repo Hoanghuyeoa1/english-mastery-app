@@ -25,8 +25,12 @@ import { PWANotificationBanner } from './components/PWANotificationBanner';
 import { LeaderboardView } from './components/LeaderboardView';
 import { AdminView } from './components/AdminView';
 import { WelcomeView } from './components/WelcomeView';
+import { ShieldCheck, UserCheck, Sparkles, WifiOff, RefreshCw } from 'lucide-react';
+import { useIsAdmin } from './utils/adminAuth';
+import type { ActiveTab, AppAccessState } from './types';
+import { setAccessToken } from './services/api/httpClient';
+import { initCloudSync, useCloudSyncStore, retryAuthCheck, invalidateInFlightAuthChecks, type AppAuthUser } from './services/cloudSyncService';
 import { useAppStore } from './store/useAppStore';
-import { initCloudSync, useCloudSyncStore, type AppAuthUser } from './services/cloudSyncService';
 import { syncCloudVocabulariesToStore } from './services/adminVocabService';
 import { syncUserScoreToLeaderboard, calculateWeeklyXpFromHistory } from './services/leaderboardService';
 import {
@@ -34,9 +38,8 @@ import {
   endActiveSession,
   tabToActiveLearningModule,
 } from './services/activeLearningTimeService';
-import { ShieldCheck, UserCheck, Sparkles } from 'lucide-react';
-import { useIsAdmin } from './utils/adminAuth';
-import type { ActiveTab } from './types';
+
+import { prepareDataSlotForGuest } from './store/dataOwnershipManager';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -64,20 +67,34 @@ export function App() {
     setIsLoggedOut,
   } = useAppStore();
 
-  const { user, isAuthInitialized } = useCloudSyncStore();
+  const { user, isAuthInitialized, isAuthUnavailable } = useCloudSyncStore();
 
   const handleNavigate = useCallback((tab: ActiveTab) => {
     setActiveTab(tab);
   }, []);
 
   const handleContinueAsGuest = useCallback(() => {
+    invalidateInFlightAuthChecks();
+    prepareDataSlotForGuest(useAppStore.getState());
     setIsLoggedOut?.(false);
     setGuestMode?.(true);
   }, [setGuestMode, setIsLoggedOut]);
 
   const handleAuthSuccess = useCallback((_authUser: AppAuthUser) => {
     setIsLoggedOut?.(false);
-  }, [setIsLoggedOut]);
+    setGuestMode?.(false);
+  }, [setIsLoggedOut, setGuestMode]);
+
+  const handleRetryAuth = useCallback(() => {
+    retryAuthCheck();
+  }, []);
+
+  const handleDismissAuthUnavailable = useCallback(() => {
+    setAccessToken(null);
+    useCloudSyncStore.getState().setUser(null);
+    useCloudSyncStore.getState().setSession(null);
+    useCloudSyncStore.getState().setAuthUnavailable(false);
+  }, []);
 
   // Active Learning Time Tracker: Tự động khởi động / kết thúc phiên học theo tab học tập
   useEffect(() => {
@@ -176,12 +193,35 @@ export function App() {
     }
   }, [user, profile.xp, profile.streak, profile.level, profile.name, profile.avatarSeed, dailyHistory]);
 
-  // Single Source of Truth for Routing Decision Matrix (Phases 1, 4, 5)
+  // Single Source of Truth for Access State Evaluation
+  // Invariants: Learning Data != Authentication Identity | Learning Data != Guest Session | Guest != Authenticated
   const isStorageHydrated = isHydrated ?? false;
   const isAuthReady = isAuthInitialized ?? false;
+  const isAuthDown = isAuthUnavailable ?? false;
+  const isAuthenticated = Boolean(user);
+  const isGuest = Boolean(isGuestMode && !isLoggedOut);
+
+  const accessState: AppAccessState = (() => {
+    if (!isStorageHydrated || !isAuthReady) {
+      return 'initializing';
+    }
+    if (isLoggedOut) {
+      return 'welcome';
+    }
+    if (isAuthenticated) {
+      return 'authenticated';
+    }
+    if (isAuthDown && !isGuest) {
+      return 'auth_unavailable';
+    }
+    if (isGuest) {
+      return 'guest';
+    }
+    return 'welcome';
+  })();
 
   // 1. Initializing / Hydrating State: Neutral screen, no Welcome flicker, no redirect loop
-  if (!isStorageHydrated || !isAuthReady) {
+  if (accessState === 'initializing') {
     return (
       <div
         role="status"
@@ -202,13 +242,53 @@ export function App() {
     );
   }
 
-  // 2. Routing Decision: Authenticated vs Guest vs Welcome Landing
-  const isAuthenticated = Boolean(user);
-  const isReturningProfile = Boolean(profile.name && profile.isOnboarded && !isLoggedOut);
-  const isGuest = Boolean((isGuestMode || isReturningProfile) && !isLoggedOut);
-  const shouldShowWelcome = !isAuthenticated && !isGuest;
+  // 2. Auth Verification Unavailable: Safe state with Retry / Guest choice, never auto-grants authenticated or guest
+  if (accessState === 'auth_unavailable') {
+    return (
+      <div
+        role="alert"
+        aria-label="Xác thực tạm thời không khả dụng"
+        className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4 text-slate-100 selection:bg-emerald-500 selection:text-slate-950"
+      >
+        <PWANotificationBanner />
+        <div className="max-w-md w-full bg-slate-900 border border-amber-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/10">
+            <WifiOff className="w-7 h-7" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-white">Không thể kết nối máy chủ xác thực</h2>
+            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              Máy chủ backend đang gián đoạn hoặc không có kết nối mạng. Bạn có thể thử kết nối lại hoặc tiếp tục học ngoại tuyến với vai trò Khách.
+            </p>
+          </div>
+          <div className="space-y-3 pt-2">
+            <button
+              onClick={handleRetryAuth}
+              className="w-full py-3 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.99]"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Thử kết nối lại</span>
+            </button>
+            <button
+              onClick={handleContinueAsGuest}
+              className="w-full py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-200 font-semibold rounded-2xl transition-all border border-slate-700 hover:border-slate-600 flex items-center justify-center gap-2 active:scale-[0.99]"
+            >
+              <span>Tiếp tục học với vai trò Khách</span>
+            </button>
+            <button
+              onClick={handleDismissAuthUnavailable}
+              className="text-xs text-slate-400 hover:text-slate-200 transition-colors py-1 block w-full"
+            >
+              Đến trang Đăng nhập / Chào mừng
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  if (shouldShowWelcome) {
+  // 3. Welcome Landing: Unauthenticated & Non-Guest
+  if (accessState === 'welcome') {
     return (
       <>
         <PWANotificationBanner />

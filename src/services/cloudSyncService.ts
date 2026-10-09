@@ -54,6 +54,7 @@ import {
   onAccountSwitch,
   setAuthenticatedUserId,
 } from './learningEvidenceTransport';
+import { prepareDataSlotForUser, archiveCurrentDataSlot } from '../store/dataOwnershipManager';
 
 const ACTIVE_USER_STORAGE_KEY = 'english_mastery_active_user_id';
 
@@ -99,11 +100,13 @@ interface CloudSyncStoreState extends CloudSyncInfo {
   session: AppAuthSession | any | null;
   isOnline: boolean;
   isAuthInitialized: boolean;
+  isAuthUnavailable: boolean;
   setStatus: (status: SyncStatus, error?: string | null) => void;
   setSession: (session: AppAuthSession | any | null) => void;
   setUser: (user: AppAuthUser | null) => void;
   setIsOnline: (online: boolean) => void;
   setAuthInitialized: (initialized: boolean) => void;
+  setAuthUnavailable: (unavailable: boolean) => void;
 }
 
 export const useCloudSyncStore = create<CloudSyncStoreState>((set) => ({
@@ -116,6 +119,7 @@ export const useCloudSyncStore = create<CloudSyncStoreState>((set) => ({
   session: null,
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
   isAuthInitialized: false,
+  isAuthUnavailable: false,
 
   setStatus: (status, errorMessage = null) =>
     set((state) => ({
@@ -146,6 +150,7 @@ export const useCloudSyncStore = create<CloudSyncStoreState>((set) => ({
     })),
 
   setAuthInitialized: (isAuthInitialized) => set({ isAuthInitialized }),
+  setAuthUnavailable: (isAuthUnavailable) => set({ isAuthUnavailable }),
 }));
 
 // Coordinator state for cloud synchronization
@@ -266,6 +271,13 @@ async function executeSync(): Promise<{ success: boolean; message?: string }> {
 
       // 1. Fetch remote snapshot atomically via ASP.NET Core Sync API
       const syncState = await cloudSyncApi.getSyncState();
+
+      // Guard: Discard stale response if user logged out or switched while in flight
+      const activeUser = useCloudSyncStore.getState().user;
+      if (!activeUser || activeUser.id !== userId) {
+        console.warn(`[CloudSync] Discarding stale syncState: active user (${activeUser?.id}) does not match sync request (${userId})`);
+        return { success: false, message: 'Phiên người dùng đã thay đổi.' };
+      }
 
       // 2. Transactional Merge: Nạp state mới nhất của Zustand store tại thời điểm commit
       const store = getCloudSyncStoreState();
@@ -567,77 +579,138 @@ function userEmailToName(email: string | null): string {
   return email.split('@')[0];
 }
 
+let authVerificationGeneration = 0;
+
+export function getAuthVerificationGeneration(): number {
+  return authVerificationGeneration;
+}
+
+export function invalidateInFlightAuthChecks(): void {
+  authVerificationGeneration++;
+  useCloudSyncStore.getState().setAuthInitialized(true);
+}
+
 /**
  * Global initialization for Cloud auth listener and network status
  * Duy nhất 1 listener toàn cục cho toàn ứng dụng, có cleanup hoàn chỉnh
  */
 export function initCloudSync(): () => void {
+  const currentGeneration = ++authVerificationGeneration;
+
   // 1. Initial auth check via ASP.NET Core API
   if (getAccessToken()) {
-    authApi.getMe()
-      .then((me) => {
-        const user: AppAuthUser = {
-          id: me.id,
-          email: me.email,
-          displayName: me.displayName,
-          roles: me.roles || [],
-        };
-        useCloudSyncStore.getState().setUser(user);
-        useCloudSyncStore.getState().setSession({ access_token: getAccessToken(), user });
-        setAuthenticatedUserId(user.id);
-      })
-      .catch(async (meErr) => {
-        if (isNetworkOrUnreachableError(meErr)) {
-          console.warn('[CloudSync] Server unreachable during getMe check, preserving existing credentials');
-          return;
-        }
+    const mePromise = authApi.getMe();
+    if (mePromise && typeof mePromise.then === 'function') {
+      mePromise
+        .then((me) => {
+          if (currentGeneration !== authVerificationGeneration) return;
+          const appStore = getCloudSyncStoreState();
+          if (appStore?.isLoggedOut) return;
+          if (appStore?.isGuestMode) return;
 
-        try {
-          const res = await authApi.refresh();
           const user: AppAuthUser = {
-            id: res.user.id,
-            email: res.user.email,
-            displayName: res.user.displayName,
-            roles: res.user.roles || [],
+            id: me.id,
+            email: me.email,
+            displayName: me.displayName,
+            roles: me.roles || [],
           };
-          useCloudSyncStore.getState().setUser(user);
-          useCloudSyncStore.getState().setSession({ access_token: res.accessToken, user });
-          setAuthenticatedUserId(user.id);
-        } catch (refreshErr) {
-          if (!isNetworkOrUnreachableError(refreshErr)) {
-            setAccessToken(null);
-            useCloudSyncStore.getState().setUser(null);
-            useCloudSyncStore.getState().setSession(null);
-            setAuthenticatedUserId(null);
+
+          const previousUserId = getActiveSyncedUserId();
+          if (previousUserId && previousUserId !== user.id) {
+            console.log(`[CloudSync] Account switch detected (${previousUserId} -> ${user.id}).`);
+            clearCachedLeaderboard();
+            invalidateAuthLeaderboardCache(user.id);
+            onAccountSwitch(user.id);
           }
-        }
-      })
-      .finally(() => {
-        useCloudSyncStore.getState().setAuthInitialized(true);
-      });
+          prepareDataSlotForUser(user.id, appStore);
+
+          useCloudSyncStore.getState().setUser(user);
+          useCloudSyncStore.getState().setSession({ access_token: getAccessToken(), user });
+          useCloudSyncStore.getState().setAuthUnavailable(false);
+          setAuthenticatedUserId(user.id);
+          setActiveSyncedUserId(user.id);
+          onUserLogin(user.id);
+        })
+        .catch(async (meErr) => {
+          if (currentGeneration !== authVerificationGeneration) return;
+          const appStore = getCloudSyncStoreState();
+          if (appStore?.isLoggedOut) return;
+          if (appStore?.isGuestMode) return;
+
+          if (isNetworkOrUnreachableError(meErr)) {
+            console.warn('[CloudSync] Server unreachable during getMe check, preserving existing credentials');
+            useCloudSyncStore.getState().setAuthUnavailable(true);
+            return;
+          }
+
+          try {
+            const res = await authApi.refresh();
+            if (currentGeneration !== authVerificationGeneration) return;
+            const currentStore = getCloudSyncStoreState();
+            if (currentStore?.isLoggedOut) return;
+            if (currentStore?.isGuestMode) return;
+
+            const user = applySuccessfulAuthResponse(res);
+            useCloudSyncStore.getState().setUser(user);
+            useCloudSyncStore.getState().setSession({ access_token: res.accessToken, user });
+            useCloudSyncStore.getState().setAuthUnavailable(false);
+            setAuthenticatedUserId(user.id);
+          } catch (refreshErr) {
+            if (currentGeneration !== authVerificationGeneration) return;
+            const currentStore = getCloudSyncStoreState();
+            if (currentStore?.isLoggedOut) return;
+            if (currentStore?.isGuestMode) return;
+
+            if (isNetworkOrUnreachableError(refreshErr)) {
+              useCloudSyncStore.getState().setAuthUnavailable(true);
+            } else {
+              setAccessToken(null);
+              useCloudSyncStore.getState().setUser(null);
+              useCloudSyncStore.getState().setSession(null);
+              useCloudSyncStore.getState().setAuthUnavailable(false);
+              setAuthenticatedUserId(null);
+            }
+          }
+        })
+        .finally(() => {
+          if (currentGeneration !== authVerificationGeneration) return;
+          useCloudSyncStore.getState().setAuthInitialized(true);
+        });
+    } else {
+      useCloudSyncStore.getState().setAuthInitialized(true);
+    }
   } else {
     // Thử khôi phục session qua HttpOnly refresh token cookie khi chưa có access token
-    authApi.refresh()
-      .then((res) => {
-        const user: AppAuthUser = {
-          id: res.user.id,
-          email: res.user.email,
-          displayName: res.user.displayName,
-          roles: res.user.roles || [],
-        };
-        useCloudSyncStore.getState().setUser(user);
-        useCloudSyncStore.getState().setSession({ access_token: res.accessToken, user });
-        setAuthenticatedUserId(user.id);
-      })
-      .catch(() => {
-        // Người dùng Guest chưa đăng nhập
-        useCloudSyncStore.getState().setUser(null);
-        useCloudSyncStore.getState().setSession(null);
-        setAuthenticatedUserId(null);
-      })
-      .finally(() => {
-        useCloudSyncStore.getState().setAuthInitialized(true);
-      });
+    const refreshPromise = authApi.refresh();
+    if (refreshPromise && typeof refreshPromise.then === 'function') {
+      refreshPromise
+        .then((res) => {
+          if (currentGeneration !== authVerificationGeneration) return;
+          const appStore = getCloudSyncStoreState();
+          if (appStore?.isLoggedOut) return;
+          if (appStore?.isGuestMode) return;
+
+          const user = applySuccessfulAuthResponse(res);
+          useCloudSyncStore.getState().setUser(user);
+          useCloudSyncStore.getState().setSession({ access_token: res.accessToken, user });
+          useCloudSyncStore.getState().setAuthUnavailable(false);
+          setAuthenticatedUserId(user.id);
+        })
+        .catch((err) => {
+          if (currentGeneration !== authVerificationGeneration) return;
+          // Người dùng Guest chưa đăng nhập hoặc không có refresh cookie
+          useCloudSyncStore.getState().setUser(null);
+          useCloudSyncStore.getState().setSession(null);
+          useCloudSyncStore.getState().setAuthUnavailable(false);
+          setAuthenticatedUserId(null);
+        })
+        .finally(() => {
+          if (currentGeneration !== authVerificationGeneration) return;
+          useCloudSyncStore.getState().setAuthInitialized(true);
+        });
+    } else {
+      useCloudSyncStore.getState().setAuthInitialized(true);
+    }
   }
 
   // 2. Set unauthorized handler
@@ -671,6 +744,7 @@ export function initCloudSync(): () => void {
   window.addEventListener('offline', handleOffline);
 
   return () => {
+    authVerificationGeneration++;
     setUnauthorizedHandler(null);
     window.removeEventListener('online', handleOnline);
     window.removeEventListener('offline', handleOffline);
@@ -681,6 +755,10 @@ export function initCloudSync(): () => void {
  * Centralized authentication state sync helper
  */
 function applySuccessfulAuthResponse(res: AuthResponse): AppAuthUser {
+  if (res.accessToken) {
+    setAccessToken(res.accessToken);
+  }
+
   const user: AppAuthUser = {
     id: res.user.id,
     email: res.user.email,
@@ -690,15 +768,13 @@ function applySuccessfulAuthResponse(res: AuthResponse): AppAuthUser {
 
   const previousUserId = getActiveSyncedUserId();
   if (previousUserId && previousUserId !== user.id) {
-    console.log(`[CloudSync] Account switch detected (${previousUserId} -> ${user.id}). Resetting local state to prevent data leakage.`);
+    console.log(`[CloudSync] Account switch detected (${previousUserId} -> ${user.id}).`);
     clearCachedLeaderboard();
     invalidateAuthLeaderboardCache(user.id);
     onAccountSwitch(user.id);
-    const store = getCloudSyncStoreState();
-    if (store?.resetToDefault) {
-      store.resetToDefault();
-    }
   }
+  const storeState = getCloudSyncStoreState();
+  prepareDataSlotForUser(user.id, storeState);
   setActiveSyncedUserId(user.id);
   setAuthenticatedUserId(user.id);
   onUserLogin(user.id);
@@ -711,9 +787,18 @@ function applySuccessfulAuthResponse(res: AuthResponse): AppAuthUser {
     }
   }
 
+  const store = getCloudSyncStoreState();
+  if (store?.setGuestMode) {
+    store.setGuestMode(false);
+  }
+  if (store?.setIsLoggedOut) {
+    store.setIsLoggedOut(false);
+  }
+
   useCloudSyncStore.getState().setUser(user);
   useCloudSyncStore.getState().setSession({ access_token: res.accessToken, user });
   useCloudSyncStore.getState().setStatus('idle');
+  useCloudSyncStore.getState().setAuthUnavailable(false);
   invalidateAuthLeaderboardCache(user.id);
   scheduleLearningEvidenceSubmission(0);
   clearLeaderboardDebounce();
@@ -856,11 +941,16 @@ export async function signInWithOtp(email: string) {
 }
 
 export async function signOutCloud() {
+  authVerificationGeneration++;
   try {
     await authApi.logout();
   } catch (err) {
     console.warn('[CloudSync] Remote logout notice:', err);
   } finally {
+    const currentUserId = getActiveSyncedUserId();
+    if (currentUserId) {
+      archiveCurrentDataSlot(currentUserId);
+    }
     setAccessToken(null);
     setAuthenticatedUserId(null);
     onUserLogout();
@@ -879,8 +969,19 @@ export async function signOutCloud() {
     if (store?.setGuestMode) {
       store.setGuestMode(false);
     }
+    useCloudSyncStore.getState().setAuthUnavailable(false);
+    useCloudSyncStore.getState().setAuthInitialized(true);
   }
   return { error: null };
+}
+
+/**
+ * Manually retry authentication check (e.g. from auth_unavailable gate)
+ */
+export function retryAuthCheck(): void {
+  useCloudSyncStore.getState().setAuthInitialized(false);
+  useCloudSyncStore.getState().setAuthUnavailable(false);
+  initCloudSync();
 }
 
 /**

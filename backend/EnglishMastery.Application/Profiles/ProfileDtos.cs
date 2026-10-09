@@ -17,7 +17,8 @@ public record UserProfileResponse(
     string FourSkillsScoresJson,
     DateTime LastActiveAt,
     DateTime CreatedAt,
-    DateTime? UpdatedAt
+    DateTime? UpdatedAt,
+    int PublicAccountId = 0
 );
 
 public record PublicUserProfileResponse(
@@ -29,7 +30,8 @@ public record PublicUserProfileResponse(
     int Xp,
     int Streak,
     string? EquippedFrame,
-    DateTime LastActiveAt
+    DateTime LastActiveAt,
+    int PublicAccountId = 0
 );
 
 public record UpdateProfileRequest(

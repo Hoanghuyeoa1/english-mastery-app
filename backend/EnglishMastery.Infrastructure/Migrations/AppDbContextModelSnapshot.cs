@@ -22,6 +22,11 @@ namespace EnglishMastery.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.HasSequence<int>("PublicAccountIdSequence")
+                .StartsAt(100000L)
+                .HasMin(100000L)
+                .HasMax(999999L);
+
             modelBuilder.Entity("EnglishMastery.Domain.Entities.AppUser", b =>
                 {
                     b.Property<Guid>("Id")
@@ -72,6 +77,9 @@ namespace EnglishMastery.Infrastructure.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("bit");
 
+                    b.Property<int>("PublicAccountId")
+                        .HasColumnType("int");
+
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
 
@@ -94,6 +102,10 @@ namespace EnglishMastery.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex")
                         .HasFilter("[NormalizedUserName] IS NOT NULL");
+
+                    b.HasIndex("PublicAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AspNetUsers_PublicAccountId");
 
                     b.ToTable("AspNetUsers", (string)null);
                 });
@@ -404,6 +416,9 @@ namespace EnglishMastery.Infrastructure.Migrations
                     b.Property<int>("Level")
                         .HasColumnType("int");
 
+                    b.Property<int>("PublicAccountId")
+                        .HasColumnType("int");
+
                     b.Property<int>("Streak")
                         .HasColumnType("int");
 
@@ -421,6 +436,10 @@ namespace EnglishMastery.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PublicAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_UserProfiles_PublicAccountId");
 
                     b.ToTable("UserProfiles", (string)null);
                 });

@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-09 — CANONICAL ACCESS STATE, WELCOME GATE & DATA ISOLATION (Phases 1 — 8)
+
+### Fixed, Hardened & Runtime Verified — Welcome Bypass Root Cause, Guest Lifecycle & Zero-Loss Multi-Identity Isolation
+
+- **Root Cause Thực Tế Được Khắc Phục Triệt Để**:
+  - **Lỗ hổng Logic Bypass cũ:** File `App.tsx` phiên bản trước chứa điều kiện `if (hasLocalData || onboardingCompleted) return <Dashboard />`. Dữ liệu học tập cũ trong localStorage (`english_mastery_storage_v2`) từ các phiên học trước khiến ứng dụng tự động mở Dashboard mà không qua Welcome gate dù chưa đăng nhập.
+  - **Khóa Cache PWA Service Worker:** `vite-plugin-pwa` precache `index.html` với `registerType: 'prompt'`. Thiếu cấu hình `vercel.json` dẫn đến việc trình duyệt người dùng tiếp tục phục vụ bundle cũ từ cache vô thời hạn khi truy cập Vercel.
+
+- **Chi Tiết Triển Khai Toàn Diện Theo 8 Giai Đoạn (Phases 1 — 8)**:
+  - **Phase 1 — Root Cause Audit & Regression Suite:** Xác định 2 rễ nguyên nhân gốc rễ, thiết lập ranh giới bất biến giữa dữ liệu học tập và danh tính người dùng. Xây dựng bộ test [WelcomeBypassPhase1Regression.test.tsx](src/components/__tests__/WelcomeBypassPhase1Regression.test.tsx) (**8/8 tests PASS**).
+  - **Phase 2 — Canonical Access State & Welcome Gate:** Thiết lập FSM 5 trạng thái (`initializing`, `auth_unavailable`, `welcome`, `guest`, `authenticated`) trong `App.tsx`. Gỡ bỏ triệt để mọi logic bypass ngầm dựa trên XP, Streak, hoặc cờ `onboardingCompleted`. Xây dựng bộ test [Phase2CanonicalAccessGate.test.tsx](src/components/__tests__/Phase2CanonicalAccessGate.test.tsx) (**11/11 tests PASS**).
+  - **Phase 3 — Explicit Guest Session Lifecycle:** Quản lý vòng đời Guest độc lập qua `sessionStorage` (`guestSessionStorage.ts`). Chế độ Khách chỉ kích hoạt khi người dùng click chủ động "Tiếp tục học mà không cần tài khoản". Không tự cấp Khách lúc mount, reload hay khi backend offline. Xây dựng [Phase3GuestLifecycle.test.tsx](src/components/__tests__/Phase3GuestLifecycle.test.tsx) (**12/12 tests PASS**).
+  - **Phase 4 — Verified Backend Auth Session:** Trạng thái xác thực chỉ được cấp sau khi ASP.NET Core xác thực thành công qua `/api/auth/me`. Xử lý refresh token xoay vòng và RFC 7807 validation details. Khóa generation guards chống stale response. Xây dựng [Phase4VerifiedAuthSession.test.tsx](src/components/__tests__/Phase4VerifiedAuthSession.test.tsx) (**11/11 tests PASS**).
+  - **Phase 5 — Legacy Data Preservation & Non-Destructive Slotting:** Quản lý khe lưu trữ độc lập qua `dataOwnershipManager.ts`: `emh_guest_slot`, `emh_user_slot_<userId>`, và `emh_legacy_unassigned_backup`. Tuyệt đối không xóa `localStorage`, không tự gộp dữ liệu giữa các danh tính. Xây dựng [Phase5LegacyDataPreservation.test.tsx](src/components/__tests__/Phase5LegacyDataPreservation.test.tsx) (**12/12 tests PASS**).
+  - **Phase 6 — Identity Isolation & Account Switching:** Cách ly hoàn toàn dữ liệu giữa Khách, Tài khoản A và Tài khoản B. Hủy private in-flight requests, dọn cache, và thu hồi quyền quản trị ADMIN lập tức khi logout. Xây dựng [Phase6IdentityIsolation.test.tsx](src/components/__tests__/Phase6IdentityIsolation.test.tsx) (**13/13 tests PASS**).
+  - **Phase 7 — Vercel, Unified & PWA Consistency:** Thiết lập cấu hình chuẩn `vercel.json` bảo toàn route `/api/(.*)` và cấu hình `Cache-Control: no-cache, no-store, must-revalidate` cho `/index.html` và `/sw.js`. Kích hoạt `cleanupOutdatedCaches: true` trong Workbox. Xây dựng [Phase7VercelUnifiedPwaConsistency.test.tsx](src/components/__tests__/Phase7VercelUnifiedPwaConsistency.test.tsx) (**11/11 tests PASS**).
+  - **Phase 8 — Final E2E Verification & Release Quality Gate:** Xây dựng bộ test tích hợp tổng hợp [Phase8FinalVerificationE2E.test.tsx](src/components/__tests__/Phase8FinalVerificationE2E.test.tsx) (**10/10 tests PASS**).
+
+- **Chất Lượng & Kết Quả Kiểm Thử (Quality Gates)**:
+  - `npx tsc -b`: **0 errors** (Strict TypeScript type-safety).
+  - `npm run lint` (`oxlint`): **0 errors** trên 565 files.
+  - `npm run build` (`tsc -b && vite build`): Biên dịch thành công trong 1.64s, PWA precache 30 entries (11.7MB).
+  - `dotnet test`: **210/210 backend tests PASS (100%)**.
+  - Vitest Regression Suites (Phases 1 — 8): **88/88 frontend tests PASS (100%)**.
+
+- **Trạng Thái Vận Hành & Giới Hạn Còn Tồn Tại**:
+  - **Local Development (`localhost:5173` / `localhost:5000`):** 100% HEALTHY & VERIFIED.
+  - **Vercel Remote Deployment:** `PRODUCTION NOT VERIFIED (REMOTE HOSTING)` do Vercel là môi trường Frontend-Only, chưa được cấu hình URL Backend ASP.NET Core công khai trên Cloud.
+  - **Google OAuth 2.0:** Logic PKCE, Popup Child Relay và Unit tests 100% PASS; Luồng Live E2E đánh dấu **BLOCKED** chờ cập nhật Production Client ID & Secret từ Google Cloud Console.
+
 ## [1.5.0] - 2026-10-09 — DUAL-MODE UNIFIED HOSTING & RELEASE GATE (Phases 1 — 8)
 
 ### Added, Hardened & Runtime Verified — Dual-Mode Architecture, Single-Origin Unified Hosting & Release Gate

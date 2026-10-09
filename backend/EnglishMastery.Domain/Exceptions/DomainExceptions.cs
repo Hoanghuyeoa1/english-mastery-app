@@ -52,3 +52,16 @@ public class ForbiddenException : DomainException
     {
     }
 }
+
+public class PublicAccountIdExhaustedException : DomainException
+{
+    public PublicAccountIdExhaustedException(string message = "Không gian mã học viên 6 chữ số (100000 - 999999) đã được cấp phát hết.", string? details = null)
+        : base("ACCOUNT_ID_EXHAUSTED", message, details)
+    {
+    }
+
+    public PublicAccountIdExhaustedException(string message, Exception innerException)
+        : base("ACCOUNT_ID_EXHAUSTED", message, innerException.Message)
+    {
+    }
+}

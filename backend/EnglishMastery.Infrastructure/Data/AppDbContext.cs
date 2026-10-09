@@ -28,17 +28,34 @@ public class AppDbContext : IdentityDbContext<AppUser, IdentityRole<Guid>, Guid>
     {
         base.OnModelCreating(modelBuilder);
 
+        // Sequence cấp phát mã học viên 6 số (100000 - 999999) nguyên tử
+        modelBuilder.HasSequence<int>("PublicAccountIdSequence")
+            .StartsAt(100000)
+            .IncrementsBy(1)
+            .HasMin(100000)
+            .HasMax(999999)
+            .IsCyclic(false);
+
+        // AppUser
+        modelBuilder.Entity<AppUser>(b =>
+        {
+            b.Property(x => x.PublicAccountId).IsRequired();
+            b.HasIndex(x => x.PublicAccountId).IsUnique().HasDatabaseName("IX_AspNetUsers_PublicAccountId");
+        });
+
         // 1. UserProfile
         modelBuilder.Entity<UserProfile>(b =>
         {
             b.ToTable("UserProfiles");
             b.HasKey(x => x.Id);
+            b.Property(x => x.PublicAccountId).IsRequired();
             b.Property(x => x.DisplayName).HasMaxLength(150).IsRequired();
             b.Property(x => x.AvatarUrl).HasMaxLength(500);
             b.Property(x => x.AvatarSeed).HasMaxLength(100);
             b.Property(x => x.EquippedFrame).HasMaxLength(100);
             b.Property(x => x.TargetGoal).HasMaxLength(50);
             b.Property(x => x.LastStudyDate).HasMaxLength(20);
+            b.HasIndex(x => x.PublicAccountId).IsUnique().HasDatabaseName("IX_UserProfiles_PublicAccountId");
         });
 
         // 2. UserSrsProgress

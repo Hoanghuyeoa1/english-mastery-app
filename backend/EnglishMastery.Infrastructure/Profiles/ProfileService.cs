@@ -46,6 +46,7 @@ public class ProfileService : IProfileService
             profile = new UserProfile
             {
                 Id = user.Id,
+                PublicAccountId = user.PublicAccountId,
                 DisplayName = user.DisplayName,
                 Level = 1,
                 Xp = 0,
@@ -79,6 +80,7 @@ public class ProfileService : IProfileService
             profile = new UserProfile
             {
                 Id = user.Id,
+                PublicAccountId = user.PublicAccountId,
                 DisplayName = user.DisplayName,
                 Level = 1,
                 Xp = 0,
@@ -212,7 +214,8 @@ public class ProfileService : IProfileService
                 Xp: 0,
                 Streak: 0,
                 EquippedFrame: null,
-                LastActiveAt: user.CreatedAt
+                LastActiveAt: user.CreatedAt,
+                PublicAccountId: user.PublicAccountId
             );
         }
 
@@ -225,7 +228,8 @@ public class ProfileService : IProfileService
             Xp: profile.Xp,
             Streak: profile.Streak,
             EquippedFrame: profile.EquippedFrame,
-            LastActiveAt: profile.LastActiveAt
+            LastActiveAt: profile.LastActiveAt,
+            PublicAccountId: profile.PublicAccountId
         );
     }
 
@@ -244,7 +248,8 @@ public class ProfileService : IProfileService
                 p.Xp,
                 p.Streak,
                 p.EquippedFrame,
-                p.LastActiveAt
+                p.LastActiveAt,
+                p.PublicAccountId
             ))
             .ToListAsync(cancellationToken);
     }
@@ -354,7 +359,8 @@ public class ProfileService : IProfileService
             FourSkillsScoresJson: p.FourSkillsScoresJson,
             LastActiveAt: p.LastActiveAt,
             CreatedAt: p.CreatedAt,
-            UpdatedAt: p.UpdatedAt
+            UpdatedAt: p.UpdatedAt,
+            PublicAccountId: p.PublicAccountId
         );
     }
 }

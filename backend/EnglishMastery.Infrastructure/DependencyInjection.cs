@@ -55,6 +55,7 @@ public static class DependencyInjection
         .AddEntityFrameworkStores<AppDbContext>();
 
         // Auth Services
+        services.AddScoped<IPublicAccountIdAllocator, PublicAccountIdAllocator>();
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IUserRoleService, UserRoleService>();
         services.AddScoped<IExternalLoginService, ExternalLoginService>();

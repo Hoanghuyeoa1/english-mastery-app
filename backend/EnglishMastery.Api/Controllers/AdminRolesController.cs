@@ -33,13 +33,15 @@ public class AdminRolesController : ControllerBase
     }
 
     [HttpGet("users")]
-    public async Task<IActionResult> ListUsers([FromQuery] string? role, CancellationToken ct)
+    [HttpGet("/api/admin/users")]
+    public async Task<ActionResult<AdminUserPageResponse>> ListUsers([FromQuery] AdminUserQueryParameters query, CancellationToken ct)
     {
-        var users = await _adminProvisioningService.ListUsersAsync(role, ct);
-        return Ok(users);
+        var result = await _adminProvisioningService.QueryUsersAsync(query, ct);
+        return Ok(result);
     }
 
     [HttpGet("{userId:guid}")]
+    [HttpGet("/api/admin/users/{userId:guid}")]
     public async Task<IActionResult> GetUserRoles([FromRoute] Guid userId, CancellationToken ct)
     {
         var user = await _adminProvisioningService.FindUserAsync(userId.ToString(), ct);

@@ -2,6 +2,7 @@ using EnglishMastery.Application.Auth;
 using EnglishMastery.Domain.Common;
 using EnglishMastery.Domain.Entities;
 using EnglishMastery.Domain.Exceptions;
+using EnglishMastery.Infrastructure.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,15 +11,18 @@ namespace EnglishMastery.Infrastructure.Auth;
 
 public class AdminProvisioningService : IAdminProvisioningService
 {
+    private readonly AppDbContext _dbContext;
     private readonly UserManager<AppUser> _userManager;
     private readonly RoleManager<IdentityRole<Guid>> _roleManager;
     private readonly ILogger<AdminProvisioningService> _logger;
 
     public AdminProvisioningService(
+        AppDbContext dbContext,
         UserManager<AppUser> userManager,
         RoleManager<IdentityRole<Guid>> roleManager,
         ILogger<AdminProvisioningService> logger)
     {
+        _dbContext = dbContext;
         _userManager = userManager;
         _roleManager = roleManager;
         _logger = logger;
@@ -43,39 +47,216 @@ public class AdminProvisioningService : IAdminProvisioningService
         var user = await ResolveUserAsync(emailOrId);
         if (user == null) return null;
 
+        var profile = await _dbContext.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == user.Id, cancellationToken);
         var roles = await _userManager.GetRolesAsync(user);
+
+        var isLocked = user.LockoutEnd.HasValue && user.LockoutEnd.Value > DateTimeOffset.UtcNow;
+        var status = isLocked ? "Locked" : "Active";
+
         return new AdminUserInfo(
             Id: user.Id,
             Email: user.Email ?? string.Empty,
-            DisplayName: user.DisplayName,
+            DisplayName: !string.IsNullOrWhiteSpace(profile?.DisplayName) ? profile.DisplayName : user.DisplayName,
             CreatedAt: user.CreatedAt,
             HasPassword: user.HasPassword,
-            Roles: roles.ToList()
+            Roles: roles.ToList(),
+            PublicAccountId: user.PublicAccountId,
+            Level: profile?.Level ?? 1,
+            Xp: profile?.Xp ?? 0,
+            Streak: profile?.Streak ?? 0,
+            Status: status,
+            LastActiveAt: profile?.LastActiveAt
         );
     }
 
     public async Task<IReadOnlyList<AdminUserInfo>> ListUsersAsync(string? roleFilter = null, CancellationToken cancellationToken = default)
     {
-        var users = await _userManager.Users.AsNoTracking().ToListAsync(cancellationToken);
-        var result = new List<AdminUserInfo>(users.Count);
+        var paged = await QueryUsersAsync(new AdminUserQueryParameters(
+            Role: roleFilter,
+            Page: 1,
+            PageSize: 1000
+        ), cancellationToken);
 
-        foreach (var u in users)
+        return paged.Items.Select(u => new AdminUserInfo(
+            Id: u.Id,
+            Email: u.Email ?? string.Empty,
+            DisplayName: u.DisplayName ?? "Chưa cập nhật",
+            CreatedAt: u.CreatedAt,
+            HasPassword: u.HasPassword,
+            Roles: u.Roles,
+            PublicAccountId: u.PublicAccountId,
+            Level: u.Level,
+            Xp: u.Xp,
+            Streak: u.Streak,
+            Status: u.Status,
+            LastActiveAt: u.LastActiveAt
+        )).ToList();
+    }
+
+    public async Task<AdminUserPageResponse> QueryUsersAsync(AdminUserQueryParameters parameters, CancellationToken cancellationToken = default)
+    {
+        var page = Math.Max(1, parameters.Page);
+        var pageSize = parameters.PageSize <= 0 ? 20 : Math.Clamp(parameters.PageSize, 1, 100);
+
+        // 1. Base Query: Left Join AspNetUsers với UserProfiles
+        var baseQuery = from u in _dbContext.Users.AsNoTracking()
+                        join p in _dbContext.UserProfiles.AsNoTracking() on u.Id equals p.Id into profiles
+                        from p in profiles.DefaultIfEmpty()
+                        select new
+                        {
+                            User = u,
+                            Profile = p,
+                            Level = p != null ? p.Level : 1,
+                            Xp = p != null ? p.Xp : 0,
+                            Streak = p != null ? p.Streak : 0,
+                            DisplayName = p != null && !string.IsNullOrWhiteSpace(p.DisplayName) ? p.DisplayName : u.DisplayName,
+                            LastActiveAt = p != null ? (DateTime?)p.LastActiveAt : null
+                        };
+
+        // 2. Role Filtering
+        if (!string.IsNullOrWhiteSpace(parameters.Role))
         {
-            var roles = await _userManager.GetRolesAsync(u);
-            if (string.IsNullOrWhiteSpace(roleFilter) || roles.Contains(roleFilter.Trim().ToUpperInvariant()))
+            var cleanRole = parameters.Role.Trim().ToUpperInvariant();
+            var roleUserIds = from ur in _dbContext.UserRoles
+                              join r in _dbContext.Roles on ur.RoleId equals r.Id
+                              where r.NormalizedName == cleanRole || r.Name == cleanRole
+                              select ur.UserId;
+            baseQuery = baseQuery.Where(x => roleUserIds.Contains(x.User.Id));
+        }
+
+        // 3. Search Filtering (DisplayName, Email, PublicAccountId)
+        if (!string.IsNullOrWhiteSpace(parameters.Search))
+        {
+            var cleanSearch = parameters.Search.Trim();
+            var searchPattern = $"%{cleanSearch}%";
+
+            if (int.TryParse(cleanSearch, out var parsedAccountId))
             {
-                result.Add(new AdminUserInfo(
-                    Id: u.Id,
-                    Email: u.Email ?? string.Empty,
-                    DisplayName: u.DisplayName,
-                    CreatedAt: u.CreatedAt,
-                    HasPassword: u.HasPassword,
-                    Roles: roles.ToList()
-                ));
+                if (cleanSearch.Length == 6)
+                {
+                    // Ưu tiên so khớp chính xác mã 6 chữ số hoặc match tên/email
+                    baseQuery = baseQuery.Where(x =>
+                        x.User.PublicAccountId == parsedAccountId ||
+                        EF.Functions.Like(x.DisplayName, searchPattern) ||
+                        (x.User.Email != null && EF.Functions.Like(x.User.Email, searchPattern))
+                    );
+                }
+                else
+                {
+                    // Partial numeric search
+                    baseQuery = baseQuery.Where(x =>
+                        x.User.PublicAccountId.ToString().Contains(cleanSearch) ||
+                        EF.Functions.Like(x.DisplayName, searchPattern) ||
+                        (x.User.Email != null && EF.Functions.Like(x.User.Email, searchPattern))
+                    );
+                }
+            }
+            else
+            {
+                // Text search trên DisplayName hoặc Email
+                baseQuery = baseQuery.Where(x =>
+                    EF.Functions.Like(x.DisplayName, searchPattern) ||
+                    (x.User.Email != null && EF.Functions.Like(x.User.Email, searchPattern))
+                );
             }
         }
 
-        return result;
+        // 4. Count sau khi áp dụng toàn bộ filters
+        var totalCount = await baseQuery.CountAsync(cancellationToken);
+
+        // 5. Server-side Sorting với Allowlist và Deterministic Tie-Breaking qua User.Id
+        var isAsc = string.Equals(parameters.SortOrder, "asc", StringComparison.OrdinalIgnoreCase);
+        var sortKey = (parameters.SortBy ?? "createdat").Trim().ToLowerInvariant();
+
+        var sortedQuery = sortKey switch
+        {
+            "level" => isAsc
+                ? baseQuery.OrderBy(x => x.Level).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.Level).ThenBy(x => x.User.Id),
+
+            "xp" => isAsc
+                ? baseQuery.OrderBy(x => x.Xp).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.Xp).ThenBy(x => x.User.Id),
+
+            "streak" => isAsc
+                ? baseQuery.OrderBy(x => x.Streak).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.Streak).ThenBy(x => x.User.Id),
+
+            "displayname" or "name" => isAsc
+                ? baseQuery.OrderBy(x => x.DisplayName).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.DisplayName).ThenBy(x => x.User.Id),
+
+            "email" => isAsc
+                ? baseQuery.OrderBy(x => x.User.Email).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.User.Email).ThenBy(x => x.User.Id),
+
+            "publicaccountid" or "accountid" => isAsc
+                ? baseQuery.OrderBy(x => x.User.PublicAccountId).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.User.PublicAccountId).ThenBy(x => x.User.Id),
+
+            _ => isAsc
+                ? baseQuery.OrderBy(x => x.User.CreatedAt).ThenBy(x => x.User.Id)
+                : baseQuery.OrderByDescending(x => x.User.CreatedAt).ThenBy(x => x.User.Id)
+        };
+
+        // 6. Pagination
+        var totalPages = totalCount > 0 ? (int)Math.Ceiling(totalCount / (double)pageSize) : 0;
+        var skip = (page - 1) * pageSize;
+
+        var pagedRecords = await sortedQuery
+            .Skip(skip)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        // 7. Lấy danh sách Roles hàng loạt (Batch Query chống N+1)
+        var pagedUserIds = pagedRecords.Select(r => r.User.Id).ToList();
+        var userRolesLookup = await (
+            from ur in _dbContext.UserRoles
+            join r in _dbContext.Roles on ur.RoleId equals r.Id
+            where pagedUserIds.Contains(ur.UserId)
+            select new { ur.UserId, r.Name }
+        ).ToListAsync(cancellationToken);
+
+        var rolesByUser = userRolesLookup
+            .GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Name!).ToList());
+
+        // 8. Projection ra AdminUserDto
+        var now = DateTimeOffset.UtcNow;
+        var items = pagedRecords.Select(r =>
+        {
+            var roles = rolesByUser.TryGetValue(r.User.Id, out var rList)
+                ? (IReadOnlyList<string>)rList
+                : new List<string> { AppRoles.User };
+
+            var isLocked = r.User.LockoutEnd.HasValue && r.User.LockoutEnd.Value > now;
+            var status = isLocked ? "Locked" : "Active";
+
+            return new AdminUserDto(
+                Id: r.User.Id,
+                PublicAccountId: r.User.PublicAccountId,
+                DisplayName: string.IsNullOrWhiteSpace(r.DisplayName) ? null : r.DisplayName,
+                Email: string.IsNullOrWhiteSpace(r.User.Email) ? null : r.User.Email,
+                Level: r.Level,
+                Xp: r.Xp,
+                Streak: r.Streak,
+                Roles: roles,
+                CreatedAt: r.User.CreatedAt,
+                LastActiveAt: r.LastActiveAt,
+                HasPassword: r.User.HasPassword,
+                Status: status
+            );
+        }).ToList();
+
+        return new AdminUserPageResponse(
+            Items: items,
+            TotalCount: totalCount,
+            Page: page,
+            PageSize: pageSize,
+            TotalPages: totalPages,
+            HasPreviousPage: page > 1 && totalPages > 0,
+            HasNextPage: page < totalPages
+        );
     }
 
     public async Task<ProvisioningResult> GrantAdminAsync(string emailOrId, CancellationToken cancellationToken = default)
@@ -105,7 +286,7 @@ public class AdminProvisioningService : IAdminProvisioningService
             return new ProvisioningResult(
                 Success: true,
                 Message: $"Người dùng {user.Email} đã có vai trò ADMIN sẵn.",
-                User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, currentRoles.ToList())
+                User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, currentRoles.ToList(), user.PublicAccountId)
             );
         }
 
@@ -126,7 +307,7 @@ public class AdminProvisioningService : IAdminProvisioningService
         return new ProvisioningResult(
             Success: true,
             Message: $"Đã cấp vai trò ADMIN thành công cho người dùng {user.Email}.",
-            User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, updatedRoles.ToList())
+            User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, updatedRoles.ToList(), user.PublicAccountId)
         );
     }
 
@@ -145,7 +326,7 @@ public class AdminProvisioningService : IAdminProvisioningService
             return new ProvisioningResult(
                 Success: true,
                 Message: $"Người dùng {user.Email} hiện không mang vai trò ADMIN.",
-                User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, currentRoles.ToList())
+                User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, currentRoles.ToList(), user.PublicAccountId)
             );
         }
 
@@ -175,7 +356,7 @@ public class AdminProvisioningService : IAdminProvisioningService
         return new ProvisioningResult(
             Success: true,
             Message: $"Đã thu hồi vai trò ADMIN của người dùng {user.Email}.",
-            User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, updatedRoles.ToList())
+            User: new AdminUserInfo(user.Id, user.Email ?? string.Empty, user.DisplayName, user.CreatedAt, user.HasPassword, updatedRoles.ToList(), user.PublicAccountId)
         );
     }
 

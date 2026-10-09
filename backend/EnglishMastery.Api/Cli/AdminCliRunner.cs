@@ -118,13 +118,14 @@ Các lệnh hỗ trợ:
 
         var users = await service.ListUsersAsync(roleFilter);
         Console.WriteLine($"=== DANH SÁCH NGƯỜI DÙNG {(roleFilter != null ? $"[Role: {roleFilter}]" : "")} (Tổng số: {users.Count}) ===");
-        Console.WriteLine($"{"ID",-38} | {"EMAIL",-30} | {"ROLES",-15} | {"TÊN HIỂN THỊ",-20}");
-        Console.WriteLine(new string('-', 110));
+        Console.WriteLine($"{"ID",-38} | {"ACC ID",-8} | {"EMAIL",-30} | {"ROLES",-15} | {"TÊN HIỂN THỊ",-20}");
+        Console.WriteLine(new string('-', 120));
 
         foreach (var u in users)
         {
             var rolesStr = string.Join(", ", u.Roles);
-            Console.WriteLine($"{u.Id,-38} | {u.Email,-30} | {rolesStr,-15} | {u.DisplayName,-20}");
+            var accIdStr = u.PublicAccountId > 0 ? u.PublicAccountId.ToString("D6") : "N/A";
+            Console.WriteLine($"{u.Id,-38} | {accIdStr,-8} | {u.Email,-30} | {rolesStr,-15} | {u.DisplayName,-20}");
         }
 
         return 0;
@@ -152,6 +153,7 @@ Các lệnh hỗ trợ:
 
         Console.WriteLine("=== THÔNG TIN NGƯỜI DÙNG ===");
         Console.WriteLine($"UserId       : {user.Id}");
+        Console.WriteLine($"PublicAccId  : {(user.PublicAccountId > 0 ? user.PublicAccountId.ToString("D6") : "N/A")}");
         Console.WriteLine($"Email        : {user.Email}");
         Console.WriteLine($"Tên hiển thị : {user.DisplayName}");
         Console.WriteLine($"Ngày tạo     : {user.CreatedAt:yyyy-MM-dd HH:mm:ss} UTC");

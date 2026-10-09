@@ -32,7 +32,8 @@ public record UserDto(
     Guid Id,
     string Email,
     string DisplayName,
-    IReadOnlyList<string>? Roles = null
+    IReadOnlyList<string>? Roles = null,
+    int PublicAccountId = 0
 );
 
 public record AuthResponse(
@@ -51,7 +52,8 @@ public record CurrentUserResponse(
     int Streak,
     string? EquippedFrame,
     DateTime CreatedAt,
-    IReadOnlyList<string>? Roles = null
+    IReadOnlyList<string>? Roles = null,
+    int PublicAccountId = 0
 );
 
 public record ExternalLoginInfoDto(

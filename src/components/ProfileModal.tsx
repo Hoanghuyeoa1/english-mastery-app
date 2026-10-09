@@ -52,6 +52,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
     setFSRSSettings,
     setEquippedFrame,
     setUnlockedFrames,
+    setGuestMode,
   } = useAppStore();
 
   const [newName, setNewName] = useState(profile.name || '');
@@ -200,6 +201,33 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Guest Mode Callout & Return to Welcome Action */}
+        {!user && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  Chế độ Khách (Guest Mode)
+                </span>
+                <span className="text-xs text-slate-400 font-medium">• Local-First</span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Tiến độ học tập và từ vựng được lưu an toàn trên máy này. Đăng nhập bất cứ lúc nào để đồng bộ đám mây và thi đua bảng xếp hạng.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setGuestMode?.(false);
+                onClose();
+              }}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 hover:text-white font-bold rounded-xl text-xs transition-colors border border-slate-700 whitespace-nowrap self-stretch sm:self-auto text-center"
+            >
+              Rời chế độ Khách (Về trang Chào mừng)
+            </button>
+          </div>
+        )}
 
         {/* User Summary Stats Card with Tier Styling */}
         <div className="bg-slate-950 p-5 rounded-3xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-inner">

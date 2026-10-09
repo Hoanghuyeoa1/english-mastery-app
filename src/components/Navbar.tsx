@@ -204,7 +204,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           
           <div 
             onClick={onOpenProfile}
-            title={`Hồ sơ: ${profile.name || 'Học viên'} • Cấp ${profile.level} (${userRank.title}) • Nhấp để xem chi tiết`}
+            title={
+              !user
+                ? `Chế độ Khách: ${profile.name || 'Học viên'} (Ngoại tuyến) • Nhấp để xem hồ sơ`
+                : `Hồ sơ: ${profile.name || 'Học viên'} • Cấp ${profile.level} (${userRank.title}) • Nhấp để xem chi tiết`
+            }
             className="flex items-center gap-3 cursor-pointer group select-none"
           >
             <UserAvatar 
@@ -220,9 +224,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className={`font-extrabold text-sm sm:text-base tracking-tight ${userRank.nameClass} ${userRank.nameDropShadow} flex items-center gap-1.5 transition-all`}>
                   {profile.name || 'Học viên'}
                 </span>
-                <div className="hidden sm:inline-flex">
-                  <UserRankBadge level={profile.level} size="sm" />
-                </div>
+                {!user ? (
+                  <span
+                    data-testid="guest-badge"
+                    className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-800 text-amber-300 border border-slate-700 shadow-sm"
+                  >
+                    Khách
+                  </span>
+                ) : (
+                  <div className="hidden sm:inline-flex">
+                    <UserRankBadge level={profile.level} size="sm" />
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span className={`font-bold ${
@@ -233,7 +246,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Cấp {profile.level}
                 </span>
                 <span>•</span>
-                <span className="hidden xs:inline">Còn {xpToNextLevel} XP lên Cấp {profile.level + 1}</span>
+                <span className="hidden xs:inline">
+                  {!user ? 'Lưu trên thiết bị' : `Còn ${xpToNextLevel} XP lên Cấp ${profile.level + 1}`}
+                </span>
               </div>
             </div>
           </div>

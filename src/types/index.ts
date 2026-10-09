@@ -478,6 +478,13 @@ export type ActiveTab =
   | 'leaderboard'
   | 'admin';
 
+export type AppAccessState =
+  | 'initializing'
+  | 'welcome'
+  | 'guest'
+  | 'authenticated'
+  | 'auth_unavailable';
+
 export * from './toeic';
 export * from './toeicListening';
 export * from './learningContinuity';

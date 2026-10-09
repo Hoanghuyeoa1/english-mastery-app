@@ -22,6 +22,7 @@ import { safeStorage } from './safeStorage';
 import { exportStoreBackup, importStoreBackup } from './backupDataService';
 import { partializeAppStore, handleStoreRehydration } from './storeRehydration';
 import { registerCloudSyncStoreGetter } from '../services/cloudSyncService';
+import { isGuestSessionActive, setGuestSessionActive } from './guestSessionStorage';
 
 // Slices
 import { createTelemetrySlice } from './slices/createTelemetrySlice';
@@ -126,15 +127,25 @@ export const useAppStore = create<AppStoreState>()(
       levelCertifications: {} as LevelCertificationStore,
       checkpointHistory: [] as CheckpointHistoryEntry[],
       isHydrated: false,
-      isGuestMode: false,
+      isGuestMode: isGuestSessionActive(),
       isLoggedOut: false,
       processedXpKeys: [] as string[],
       completedQuizSessionIds: [] as string[],
       processedMistakeKeys: [] as string[],
 
       // Routing / Guest Actions
-      setGuestMode: (enabled: boolean) => set({ isGuestMode: enabled }),
-      setIsLoggedOut: (loggedOut: boolean) => set({ isLoggedOut: loggedOut }),
+      setGuestMode: (enabled: boolean) => {
+        setGuestSessionActive(enabled);
+        set({ isGuestMode: enabled });
+      },
+      setIsLoggedOut: (loggedOut: boolean) => {
+        if (loggedOut) {
+          setGuestSessionActive(false);
+          set({ isLoggedOut: loggedOut, isGuestMode: false });
+        } else {
+          set({ isLoggedOut: loggedOut });
+        }
+      },
 
       // Domain Slices
       ...createTelemetrySlice(set as any, get as any),

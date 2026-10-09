@@ -16,6 +16,7 @@ public class AuthService : IAuthService
     private readonly RoleManager<IdentityRole<Guid>> _roleManager;
     private readonly AppDbContext _dbContext;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
+    private readonly IPublicAccountIdAllocator _idAllocator;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AuthService> _logger;
 
@@ -24,6 +25,7 @@ public class AuthService : IAuthService
         RoleManager<IdentityRole<Guid>> roleManager,
         AppDbContext dbContext,
         IJwtTokenGenerator jwtTokenGenerator,
+        IPublicAccountIdAllocator idAllocator,
         IConfiguration configuration,
         ILogger<AuthService> logger)
     {
@@ -31,6 +33,7 @@ public class AuthService : IAuthService
         _roleManager = roleManager;
         _dbContext = dbContext;
         _jwtTokenGenerator = jwtTokenGenerator;
+        _idAllocator = idAllocator;
         _configuration = configuration;
         _logger = logger;
     }
@@ -53,21 +56,24 @@ public class AuthService : IAuthService
             displayName = displayName.Substring(0, 150);
         }
 
-        var user = new AppUser
-        {
-            Id = Guid.NewGuid(),
-            UserName = normalizedEmail,
-            Email = normalizedEmail,
-            DisplayName = displayName,
-            CreatedAt = DateTime.UtcNow
-        };
-
         var strategy = _dbContext.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
             try
             {
+                var publicAccountId = await _idAllocator.AllocateNextIdAsync(cancellationToken);
+
+                var user = new AppUser
+                {
+                    Id = Guid.NewGuid(),
+                    PublicAccountId = publicAccountId,
+                    UserName = normalizedEmail,
+                    Email = normalizedEmail,
+                    DisplayName = displayName,
+                    CreatedAt = DateTime.UtcNow
+                };
+
                 var result = await _userManager.CreateAsync(user, request.Password);
                 if (!result.Succeeded)
                 {
@@ -102,6 +108,7 @@ public class AuthService : IAuthService
                 var profile = new UserProfile
                 {
                     Id = user.Id,
+                    PublicAccountId = publicAccountId,
                     DisplayName = displayName,
                     Level = 1,
                     Xp = 0,
@@ -134,14 +141,14 @@ public class AuthService : IAuthService
 
                 await transaction.CommitAsync(cancellationToken);
 
-                _logger.LogInformation("Đã đăng ký tài khoản người dùng mới thành công với UserId: {UserId}", user.Id);
+                _logger.LogInformation("Đã đăng ký tài khoản người dùng mới thành công với UserId: {UserId}, PublicAccountId: {PublicAccountId}", user.Id, publicAccountId);
 
                 var expirationMinutes = int.TryParse(_configuration["Jwt:AccessTokenExpirationMinutes"], out var mins) ? mins : 60;
                 return new AuthResponse(
                     AccessToken: accessToken,
                     RefreshToken: refreshToken.Token,
                     ExpiresInSeconds: expirationMinutes * 60,
-                    User: new UserDto(user.Id, user.Email!, user.DisplayName, userRoles)
+                    User: new UserDto(user.Id, user.Email!, user.DisplayName, userRoles, user.PublicAccountId)
                 );
             }
             catch
@@ -181,7 +188,7 @@ public class AuthService : IAuthService
             AccessToken: accessToken,
             RefreshToken: refreshToken.Token,
             ExpiresInSeconds: expirationMinutes * 60,
-            User: new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList())
+            User: new UserDto(user.Id, user.Email!, user.DisplayName, roles.ToList(), user.PublicAccountId)
         );
     }
 
@@ -219,7 +226,7 @@ public class AuthService : IAuthService
             AccessToken: newAccessToken,
             RefreshToken: newRefreshToken.Token,
             ExpiresInSeconds: expirationMinutes * 60,
-            User: new UserDto(token.User.Id, token.User.Email!, token.User.DisplayName, roles.ToList())
+            User: new UserDto(token.User.Id, token.User.Email!, token.User.DisplayName, roles.ToList(), token.User.PublicAccountId)
         );
     }
 
@@ -261,7 +268,8 @@ public class AuthService : IAuthService
             Streak: profile?.Streak ?? 0,
             EquippedFrame: profile?.EquippedFrame,
             CreatedAt: user.CreatedAt,
-            Roles: roles.ToList()
+            Roles: roles.ToList(),
+            PublicAccountId: user.PublicAccountId
         );
     }
 
@@ -279,7 +287,7 @@ public class AuthService : IAuthService
             AccessToken: accessToken,
             RefreshToken: refreshToken.Token,
             ExpiresInSeconds: expirationMinutes * 60,
-            User: new UserDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList())
+            User: new UserDto(user.Id, user.Email ?? string.Empty, user.DisplayName, roles.ToList(), user.PublicAccountId)
         );
     }
 }

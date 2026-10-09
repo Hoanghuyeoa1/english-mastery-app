@@ -1,0 +1,13 @@
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\bin\Debug\net10.0\EnglishMastery.Domain.deps.json
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\bin\Debug\net10.0\EnglishMastery.Domain.dll
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\bin\Debug\net10.0\EnglishMastery.Domain.pdb
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.AssemblyInfoInputs.cache
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.AssemblyInfo.cs
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.csproj.CoreCompileInputs.cache
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.sourcelink.json
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.dll
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\refint\EnglishMastery.Domain.dll
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.pdb
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\ref\EnglishMastery.Domain.dll
+C:\Users\hoang\.gemini\antigravity-ide\scratch\english-mastery-app\backend\EnglishMastery.Domain\obj\Debug\net10.0\EnglishMastery.Domain.csproj.AssemblyReference.cache

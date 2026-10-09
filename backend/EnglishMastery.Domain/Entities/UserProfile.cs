@@ -4,6 +4,7 @@ namespace EnglishMastery.Domain.Entities;
 
 public class UserProfile : BaseEntity
 {
+    public int PublicAccountId { get; set; }
     public string DisplayName { get; set; } = "Học viên ẩn danh";
     public string? AvatarUrl { get; set; }
     public string? AvatarSeed { get; set; }
