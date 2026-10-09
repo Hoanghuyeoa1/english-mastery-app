@@ -26,6 +26,7 @@ import {
 describe('PHASE 5 — Frontend API Client Foundation & Authentication Cutover', () => {
   const originalFetch = globalThis.fetch;
   let mockStoreResetFn: ReturnType<typeof vi.fn>;
+  let mockSetIsLoggedOut: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,6 +36,7 @@ describe('PHASE 5 — Frontend API Client Foundation & Authentication Cutover', 
     setActiveSyncedUserId(null);
 
     mockStoreResetFn = vi.fn();
+    mockSetIsLoggedOut = vi.fn();
     registerCloudSyncStoreGetter(() => ({
       profile: { name: 'Test Learner', xp: 100, level: 1, streak: 1 },
       dailyHistory: {},
@@ -42,6 +44,8 @@ describe('PHASE 5 — Frontend API Client Foundation & Authentication Cutover', 
       userCollocations: [],
       recentReviewEvents: [],
       resetToDefault: mockStoreResetFn,
+      setIsLoggedOut: mockSetIsLoggedOut,
+      setGuestMode: vi.fn(),
       mergeCloudData: vi.fn(),
     }));
 
@@ -367,7 +371,7 @@ describe('PHASE 5 — Frontend API Client Foundation & Authentication Cutover', 
       expect(storeState.userId).toBe('user-guid-999');
     });
 
-    it('signs out and purges active user, store credentials, and triggers reset', async () => {
+    it('signs out and purges active user, store credentials, and preserves local progress', async () => {
       setActiveSyncedUserId('user-guid-logout');
       setAccessToken('token-to-logout');
       useCloudSyncStore.setState({
@@ -385,7 +389,8 @@ describe('PHASE 5 — Frontend API Client Foundation & Authentication Cutover', 
       expect(getActiveSyncedUserId()).toBeNull();
       expect(useCloudSyncStore.getState().user).toBeNull();
       expect(useCloudSyncStore.getState().userId).toBeNull();
-      expect(mockStoreResetFn).toHaveBeenCalled();
+      expect(mockSetIsLoggedOut).toHaveBeenCalledWith(true);
+      expect(mockStoreResetFn).not.toHaveBeenCalled();
     });
 
     it('detects Account Switch and resets local state to prevent data leakage', async () => {

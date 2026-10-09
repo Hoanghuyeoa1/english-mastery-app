@@ -9,6 +9,7 @@
     "dev:frontend": "vite",
     "backend": "dotnet run --project backend/EnglishMastery.Api/EnglishMastery.Api.csproj --launch-profile http",
     "dev:backend": "dotnet run --project backend/EnglishMastery.Api/EnglishMastery.Api.csproj --launch-profile http",
+    "start:unified": "node scripts/start-unified.mjs",
     "check:services": "node scripts/check-services.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",

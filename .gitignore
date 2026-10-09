@@ -24,4 +24,5 @@ dev-dist
 **/.vs/
 **/*.user
 **/TestResults/
+backend/EnglishMastery.Api/wwwroot/
 

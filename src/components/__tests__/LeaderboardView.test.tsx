@@ -131,7 +131,7 @@ describe('LeaderboardView Component (Real-User States & Zero-Mock UI)', () => {
     });
 
     expect(
-      screen.getByText('Chưa có học viên nào trên bảng xếp hạng.')
+      screen.getByText('Chưa có người học nào trong tuần này.')
     ).toBeDefined();
     // Bục vinh danh không hiển thị
     expect(screen.queryByText('Alex Kim')).toBeNull();

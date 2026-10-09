@@ -8,6 +8,7 @@ import { scheduleCloudSync } from '../../services/cloudSyncService';
 import { evaluateAndRecordXpAward } from '../../services/xpAntiSpamService';
 import { emitCompleteQuizEvent } from '../../services/completeQuizEventService';
 import { getVietnamDateString, getCalendarDayDiff } from '../../utils/dateUtils';
+import { reconcileHistoricalStreak, type StreakReconciliationResult } from '../../services/streakReconciliationService';
 
 export interface ProfileSlice {
   setProfileName: (name: string, targetGoal?: UserProfile['targetGoal']) => void;
@@ -22,6 +23,7 @@ export interface ProfileSlice {
   setDailyNewWordsLimit: (limit: number) => void;
   addExtraNewWords: (count: number) => void;
   checkAndUpdateStreak: () => void;
+  reconcileStreakFromHistory: () => StreakReconciliationResult;
   gainXP: (
     amount: number,
     options?: {
@@ -108,8 +110,9 @@ export const createProfileSlice = (set: SetState, get: GetState): ProfileSlice =
 
     if (!lastActiveDate || lastActiveDate !== today) {
       let updatedStreak = streak;
-      if (lastStudyDate) {
-        const diffDays = getCalendarDayDiff(today, lastStudyDate);
+      const prevDate = lastStudyDate || ((streak && streak > 0) ? lastActiveDate : null);
+      if (prevDate) {
+        const diffDays = getCalendarDayDiff(today, prevDate);
         if (diffDays === null || diffDays > 1) {
           // Missed >= 1 day of studying (yesterday was skipped), streak is broken
           updatedStreak = 0;
@@ -177,12 +180,14 @@ export const createProfileSlice = (set: SetState, get: GetState): ProfileSlice =
   checkAndUpdateStreak: () => {
     const today = getVietnamDateString();
     if (!today) return;
-    const { lastStudyDate, streak, longestStreak } = get().profile;
+    const { lastStudyDate, streak, longestStreak, lastActiveDate } = get().profile;
 
     // Idempotent: Nếu hôm nay đã có hoạt động học tập hợp lệ, không tăng chuỗi lặp lại
     if (lastStudyDate === today) return;
 
-    if (!lastStudyDate) {
+    const prevDate = lastStudyDate || ((streak && streak > 0) ? lastActiveDate : null);
+
+    if (!prevDate) {
       // Ngày đầu tiên có hoạt động học tập hợp lệ (First Qualifying Day)
       const newStreak = Math.max(1, streak || 1);
       const newLongest = Math.max(longestStreak || 0, newStreak);
@@ -200,7 +205,7 @@ export const createProfileSlice = (set: SetState, get: GetState): ProfileSlice =
       return;
     }
 
-    const diffDays = getCalendarDayDiff(today, lastStudyDate);
+    const diffDays = getCalendarDayDiff(today, prevDate);
 
     if (diffDays === 1) {
       // Ngày liên tiếp kế tiếp (Consecutive day)
@@ -243,6 +248,29 @@ export const createProfileSlice = (set: SetState, get: GetState): ProfileSlice =
         },
       }));
     }
+  },
+
+  reconcileStreakFromHistory: (): StreakReconciliationResult => {
+    const state = get();
+    const result = reconcileHistoricalStreak({
+      profile: state.profile,
+      dailyHistory: state.dailyHistory,
+      recentReviewEvents: state.recentReviewEvents,
+    });
+
+    if (result.modified) {
+      set((currentState) => ({
+        profile: {
+          ...currentState.profile,
+          streak: result.reconciledStreak,
+          longestStreak: result.reconciledLongestStreak,
+          lastStudyDate: result.reconciledLastStudyDate || currentState.profile.lastStudyDate,
+        },
+      }));
+      scheduleCloudSync(2000);
+    }
+
+    return result;
   },
 
   gainXP: (

@@ -74,7 +74,7 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
     <div
       role="region"
       aria-label="Welcome and Authentication Landing"
-      className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950 relative overflow-x-hidden"
+      className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between selection:bg-emerald-500 selection:text-slate-950 relative"
     >
       {/* Skip to Content Link for Keyboard / Screen Reader Navigation */}
       <a
@@ -84,10 +84,12 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
         Chuyển đến phần Đăng nhập
       </a>
 
-      {/* Background Ambient Glow Gradients */}
-      <div className="absolute top-0 left-1/4 -translate-x-1/2 -mt-32 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 right-1/4 translate-x-1/2 -mb-32 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute top-1/2 right-10 w-72 h-72 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+      {/* Background Ambient Glow Gradients (Contained to prevent document overflow) */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+        <div className="absolute top-0 left-1/4 -translate-x-1/2 -mt-32 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 translate-x-1/2 -mb-32 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 right-10 w-72 h-72 bg-cyan-500/5 rounded-full blur-3xl" />
+      </div>
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex flex-col justify-center relative z-10">
@@ -247,9 +249,11 @@ export const WelcomeView: React.FC<WelcomeViewProps> = ({
           >
             <div className="relative bg-slate-900/90 border-2 border-slate-750/90 rounded-3xl p-5 sm:p-8 shadow-2xl shadow-emerald-950/30 backdrop-blur-xl space-y-6">
               
-              {/* Card Ambient Decoration */}
-              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-              <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 bg-teal-500/10 rounded-full blur-2xl pointer-events-none" />
+              {/* Card Ambient Decoration (Contained within card boundaries) */}
+              <div className="absolute inset-0 overflow-hidden rounded-3xl pointer-events-none" aria-hidden="true">
+                <div className="absolute top-0 right-0 -mr-16 -mt-16 w-48 h-48 bg-emerald-500/10 rounded-full blur-2xl" />
+                <div className="absolute bottom-0 left-0 -ml-16 -mb-16 w-48 h-48 bg-teal-500/10 rounded-full blur-2xl" />
+              </div>
 
               {/* Card Header */}
               <div className="text-left space-y-1 relative z-10">

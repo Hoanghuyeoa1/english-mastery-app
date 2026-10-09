@@ -607,7 +607,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <Flame className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs text-slate-400">Chuỗi Streak</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Chuỗi Streak</span>
+                {(profile.longestStreak ?? 0) > profile.streak && (
+                  <span className="text-[10px] font-semibold text-amber-400/90 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                    Kỷ lục: {profile.longestStreak}
+                  </span>
+                )}
+              </div>
               <div className="text-base font-black text-orange-400">{profile.streak} ngày liên tục 🔥</div>
             </div>
           </div>

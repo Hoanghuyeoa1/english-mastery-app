@@ -172,7 +172,8 @@ public class GoogleAuthService : IGoogleAuthService
                 if (s != null) safeUrl = s.ReturnUrl;
             }
 
-            var errUrl = $"{safeUrl}?(oauth_error={Uri.EscapeDataString(error)}&oauth_error_description={Uri.EscapeDataString(errorDescription ?? "")})";
+            var errSep = safeUrl.Contains('?') ? "&" : "?";
+            var errUrl = $"{safeUrl}{errSep}oauth_error={Uri.EscapeDataString(error)}&oauth_error_description={Uri.EscapeDataString(errorDescription ?? "")}";
             return new GoogleCallbackResult(false, errUrl, ErrorCode: error, ErrorMessage: errorDescription);
         }
 
@@ -180,14 +181,16 @@ public class GoogleAuthService : IGoogleAuthService
         if (string.IsNullOrWhiteSpace(state))
         {
             _logger.LogWarning("Callback từ Google thiếu tham số 'state'.");
-            return new GoogleCallbackResult(false, $"{fallbackUrl}?oauth_error=invalid_state", ErrorCode: "invalid_state", ErrorMessage: "Thiếu tham số state");
+            var sep = fallbackUrl.Contains('?') ? "&" : "?";
+            return new GoogleCallbackResult(false, $"{fallbackUrl}{sep}oauth_error=invalid_state", ErrorCode: "invalid_state", ErrorMessage: "Thiếu tham số state");
         }
 
         var stateData = await _stateManager.ConsumeStateAsync(state, ct);
         if (stateData == null)
         {
             _logger.LogWarning("Callback từ Google có 'state' không hợp lệ, đã hết hạn hoặc đã bị sử dụng trước đó (Replay attempt).");
-            return new GoogleCallbackResult(false, $"{fallbackUrl}?oauth_error=invalid_state", ErrorCode: "invalid_state", ErrorMessage: "Trạng thái state không hợp lệ hoặc đã hết hạn");
+            var sep = fallbackUrl.Contains('?') ? "&" : "?";
+            return new GoogleCallbackResult(false, $"{fallbackUrl}{sep}oauth_error=invalid_state", ErrorCode: "invalid_state", ErrorMessage: "Trạng thái state không hợp lệ hoặc đã hết hạn");
         }
 
         var targetReturnUrl = stateData.ReturnUrl;
@@ -196,7 +199,8 @@ public class GoogleAuthService : IGoogleAuthService
         if (string.IsNullOrWhiteSpace(code))
         {
             _logger.LogWarning("Callback từ Google thiếu mã authorization 'code'.");
-            return new GoogleCallbackResult(false, $"{targetReturnUrl}?oauth_error=invalid_code", ErrorCode: "invalid_code", ErrorMessage: "Thiếu mã xác thực từ Google");
+            var sep = targetReturnUrl.Contains('?') ? "&" : "?";
+            return new GoogleCallbackResult(false, $"{targetReturnUrl}{sep}oauth_error=invalid_code", ErrorCode: "invalid_code", ErrorMessage: "Thiếu mã xác thực từ Google");
         }
 
         // 4. Trao đổi authorization code với Google Token Endpoint kèm code_verifier (PKCE verification)
@@ -208,7 +212,8 @@ public class GoogleAuthService : IGoogleAuthService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Lỗi khi trao đổi mã authorization code với Google.");
-            return new GoogleCallbackResult(false, $"{targetReturnUrl}?oauth_error=exchange_failed", ErrorCode: "exchange_failed", ErrorMessage: ex.Message);
+            var sep = targetReturnUrl.Contains('?') ? "&" : "?";
+            return new GoogleCallbackResult(false, $"{targetReturnUrl}{sep}oauth_error=exchange_failed", ErrorCode: "exchange_failed", ErrorMessage: ex.Message);
         }
 
         // 5. Xác minh ID Token và kiểm tra Nonce
@@ -220,7 +225,8 @@ public class GoogleAuthService : IGoogleAuthService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Xác minh Google ID Token thất bại.");
-            return new GoogleCallbackResult(false, $"{targetReturnUrl}?oauth_error=invalid_id_token", ErrorCode: "invalid_id_token", ErrorMessage: ex.Message);
+            var sep = targetReturnUrl.Contains('?') ? "&" : "?";
+            return new GoogleCallbackResult(false, $"{targetReturnUrl}{sep}oauth_error=invalid_id_token", ErrorCode: "invalid_id_token", ErrorMessage: ex.Message);
         }
 
         // 6. Identity Mapping & Account Resolution
@@ -248,7 +254,8 @@ public class GoogleAuthService : IGoogleAuthService
                         payload.Email, payload.Sub);
 
                     const string collisionMsg = "Email này đã được đăng ký bằng mật khẩu. Để bảo mật tài khoản, vui lòng đăng nhập bằng mật khẩu trước, sau đó chủ động liên kết Google trong mục Cài đặt tài khoản.";
-                    var collisionUrl = $"{targetReturnUrl}?oauth_error=email_collision&oauth_error_description={Uri.EscapeDataString(collisionMsg)}";
+                    var sep = targetReturnUrl.Contains('?') ? "&" : "?";
+                    var collisionUrl = $"{targetReturnUrl}{sep}oauth_error=email_collision&email={Uri.EscapeDataString(payload.Email)}&oauth_error_description={Uri.EscapeDataString(collisionMsg)}";
 
                     return new GoogleCallbackResult(
                         Success: false,
@@ -351,7 +358,8 @@ public class GoogleAuthService : IGoogleAuthService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Lỗi khi xử lý lưu trữ người dùng từ Google OAuth.");
-            return new GoogleCallbackResult(false, $"{targetReturnUrl}?oauth_error=account_resolution_failed", ErrorCode: "account_resolution_failed", ErrorMessage: ex.Message);
+            var sep = targetReturnUrl.Contains('?') ? "&" : "?";
+            return new GoogleCallbackResult(false, $"{targetReturnUrl}{sep}oauth_error=account_resolution_failed", ErrorCode: "account_resolution_failed", ErrorMessage: ex.Message);
         }
 
         // 7. Tạo phiên xác thực AuthResponse (JWT + Refresh token dùng chung engine chính tắc)

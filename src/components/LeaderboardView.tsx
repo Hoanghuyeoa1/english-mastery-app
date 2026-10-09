@@ -352,7 +352,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenAuthSync
     const offset = (page - 1) * pageSize;
 
     try {
-      if (!isOnline && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      if (!isOnline || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
         const cached = getCachedLeaderboard(selectedMetric);
         if (currentRequestId !== requestIdRef.current) return;
         if (cached && cached.entries.length > 0) {
@@ -416,7 +416,10 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onOpenAuthSync
         setCachedWeekId(res.cachedWeekId || null);
         setIsStaleWeek(Boolean(res.isStaleWeek));
       } else {
-        setFetchStatus(res.status || 'SERVER_ERROR');
+        const fallbackStatus = res.error && (res.error.toLowerCase().includes('network') || res.error.toLowerCase().includes('connection'))
+          ? 'NETWORK_ERROR'
+          : 'SERVER_ERROR';
+        setFetchStatus(res.status || fallbackStatus);
         setFetchError(res.error || 'Đã có lỗi xảy ra khi kết nối máy chủ.');
         setEntries((prev) => (prev.length === 0 ? [] : prev));
         setTop3Entries((prev) => (prev.length === 0 ? [] : prev));

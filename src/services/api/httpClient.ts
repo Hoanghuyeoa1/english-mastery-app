@@ -66,6 +66,9 @@ export function getApiBaseUrl(): string {
   if (envUrl) {
     return envUrl.replace(/\/+$/, '');
   }
+  if (import.meta.env?.PROD) {
+    return '/api';
+  }
   return 'http://localhost:5000/api';
 }
 
@@ -109,8 +112,12 @@ export interface RequestOptions extends RequestInit {
 export async function fetchApi<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const baseUrl = getApiBaseUrl();
   let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  if (baseUrl.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
-    cleanEndpoint = cleanEndpoint.substring(4);
+  if (baseUrl.endsWith('/api')) {
+    if (cleanEndpoint === '/api') {
+      cleanEndpoint = '';
+    } else if (cleanEndpoint.startsWith('/api/')) {
+      cleanEndpoint = cleanEndpoint.substring(4);
+    }
   }
   const url = `${baseUrl}${cleanEndpoint}`;
 
@@ -197,10 +204,10 @@ export async function fetchApi<T>(endpoint: string, options: RequestOptions = {}
       try {
         const json = await response.json();
 
-        let extractedMessage: string | undefined = json.message;
-        let extractedDetails: string | undefined = json.details;
-        let extractedCode: string | undefined = json.code;
-        const traceId: string | undefined = json.traceId || json.requestId;
+        let extractedMessage: string | undefined = json.message || json.Message;
+        let extractedDetails: string | undefined = json.details || json.Details;
+        let extractedCode: string | undefined = json.code || json.Code;
+        const traceId: string | undefined = json.traceId || json.requestId || json.TraceId || json.RequestId;
 
         // Trích xuất validation messages từ ASP.NET Core ValidationProblemDetails (RFC 7807)
         if (json.errors && typeof json.errors === 'object') {

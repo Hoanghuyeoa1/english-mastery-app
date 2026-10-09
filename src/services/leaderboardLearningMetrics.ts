@@ -42,6 +42,7 @@ import {
   type SyncWeeklyLearningMetricsPayload,
 } from './leaderboardService';
 import { isDueForReview } from './srsAlgorithm';
+import { getVietnamDateString } from '../utils/dateUtils';
 import {
   deriveActiveLearningMinutes,
   type ActiveSessionRecord,

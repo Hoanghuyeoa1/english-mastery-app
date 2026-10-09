@@ -3,6 +3,7 @@ import React from 'react';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useAppStore } from '../../store/useAppStore';
+import { useCloudSyncStore } from '../cloudSyncService';
 import * as leaderboardService from '../leaderboardService';
 import { Dashboard } from '../../components/Dashboard';
 import { App } from '../../App';
@@ -226,7 +227,13 @@ describe('XP Reload & Idempotency Regression Audit', () => {
     const currentWeekDates = leaderboardService.getCurrentUtcWeekDates();
     const today = currentWeekDates[0]; // Monday of current week
 
+    useCloudSyncStore.setState({
+      user: { id: 'test-user-id', email: 'test@example.com' } as any,
+      isAuthInitialized: true,
+    });
+
     useAppStore.setState({
+      isHydrated: true,
       profile: {
         ...useAppStore.getState().profile,
         name: 'Hoang Champion',

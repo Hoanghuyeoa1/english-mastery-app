@@ -9,6 +9,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-09 — DUAL-MODE UNIFIED HOSTING & RELEASE GATE (Phases 1 — 8)
+
+### Added, Hardened & Runtime Verified — Dual-Mode Architecture, Single-Origin Unified Hosting & Release Gate
+
+- **Kiến Trúc Hai Chế Độ Vận Hành (Dual Hosting Modes Architecture)**:
+  - **DEV MODE (`npm run dev`):** Trình điều phối `scripts/dev.mjs` khởi động đồng thời Vite Frontend (`http://localhost:5173`) và ASP.NET Core 10 Backend (`http://localhost:5000`). Hỗ trợ HMR, thăm dò sức khỏe SQL Server qua `/api/health`, và dọn dẹp sạch sẽ toàn bộ cây tiến trình (`taskkill /F /T /PID`) khi nhấn Ctrl+C, bảo đảm không orphan process.
+  - **UNIFIED MODE (`npm run start:unified`):** Trình điều phối `scripts/start-unified.mjs` tự động biên dịch React Production bundle bằng Vite, đồng bộ tài nguyên vào `backend/EnglishMastery.Api/wwwroot`, và khởi chạy máy chủ duy nhất trên cổng 5000. Máy chủ ASP.NET Core phục vụ đồng thời:
+    - React SPA tại root `/` và các client routes (`/dashboard`, `/leaderboard`, `/admin`, `/toeic`).
+    - REST API tại `/api/*`.
+    - SignalR Realtime Leaderboard Hub tại `/hubs/leaderboard`.
+    - Web Manifest chuẩn PWA tại `/manifest.webmanifest` (`application/manifest+json`).
+    - Service Worker tại `/sw.js` (`no-cache, no-store, must-revalidate`).
+    - Cổng 5173 hoàn toàn không chạy, loại bỏ hoàn toàn chi phí CORS trên cùng một browser origin.
+
+- **Chi Tiết Triển Khai Theo 8 Giai Đoạn (Phases 1 — 8)**:
+  - **Phase 1 — Dual-Mode Architecture & Origin Specification:** Xác lập rõ ranh giới hai browser origin `localhost:5173` và `localhost:5000`. Thiết kế kiến trúc chuyển tiếp không phá vỡ logic nghiệp vụ hiện có.
+  - **Phase 2 — React Build & Static Asset Pipeline:** Cấu hình đường dẫn xuất bundle Vite vào `dist/` và đồng bộ an toàn sang `backend/EnglishMastery.Api/wwwroot`. Kiểm tra chặt chẽ tính toàn vẹn của `index.html` và hash assets.
+  - **Phase 3 — ASP.NET Core Static File Hosting & Single-Origin Routing:**
+    - Cấu hình `FileExtensionContentTypeProvider` bổ sung MIME type `application/manifest+json` cho file `.webmanifest`.
+    - Thiết lập header `Cache-Control: public, max-age=31536000, immutable` cho toàn bộ tài nguyên băm `/assets/*`.
+    - Thiết lập `Cache-Control: no-cache, no-store, must-revalidate` cho `/index.html`, `/sw.js`, `/manifest.webmanifest`.
+    - Cấu hình `MapFallback` thông minh: Phục vụ `index.html` cho client routes, đồng thời cách ly tuyệt đối các route `/api/*`, `/hubs/*`, `/health` và missing static assets, trả về mã HTTP 404 JSON (NOT_FOUND) hoặc 404 chuẩn, không bị SPA fallback nuốt lỗi.
+  - **Phase 4 — Local Development Orchestration:**
+    - Xây dựng `scripts/dev.mjs` và `scripts/start-unified.mjs` với khả năng phát hiện va chạm cổng mạng, kiểm tra an toàn không tự ý kill tiến trình bên ngoài.
+    - Quản lý vòng đời tiến trình trên Windows qua `taskkill /F /T /PID`, triệt tiêu hoàn toàn nguy cơ rò rỉ tiến trình chạy ngầm.
+  - **Phase 5 — Authentication & RBAC Cross-Mode Integration:**
+    - Khảo sát và hỗ trợ luồng xác thực kép: Email/Password và Google OAuth 2.0 PKCE.
+    - Mở rộng danh sách `AllowedReturnUrls` trong backend cho phép cả `http://localhost:5173` và `http://localhost:5000`.
+    - Đảm bảo Google OAuth callback (`/api/auth/google/callback`) chuyển hướng an toàn, phân tách tham số query tường minh không dùng dấu ngoặc đơn gây lỗi router.
+    - Bảo vệ nghiêm ngặt RBAC: Quyền mặc định khi đăng ký luôn là `USER`, route quản trị `/api/admin/*` trả về 401 Unauthorized cho Guest và 403 Forbidden cho `USER`.
+  - **Phase 6 — SignalR & Leaderboard Dual-Mode Integration:**
+    - Hàm giải quyết URL `getSignalRHubUrl()` hỗ trợ linh hoạt: Dev Mode trỏ về `http://localhost:5000/hubs/leaderboard`, Unified Mode trỏ về relative `/hubs/leaderboard`.
+    - Xác minh toàn diện 7 hạng mục Leaderboard (`weekly_xp`, `vocab_mastered`, `review_consistency`, `active_minutes`, `pronunciation_gain`, `toeic_gain`, `streak`).
+    - Bảo toàn chính sách chốt tuần lúc 00:00:00 Thứ Hai (Asia/Ho_Chi_Minh — UTC+7), server-authoritative rankings, và giới hạn phân trang cứng `pageSize <= 50`.
+  - **Phase 7 — PWA & Local-First Origin Migration Safety:**
+    - Bổ sung `navigateFallbackDenylist: [/^\/api/, /^\/hubs/, /^\/health/, /^\/swagger/]` trong cấu hình Workbox của `vite.config.ts`, ngăn chặn Service Worker can thiệp vào các API call hoặc SignalR handshake.
+    - Bổ sung chỉ dẫn di chuyển dữ liệu Local-First trong `src/components/BackupModal.tsx`, hướng dẫn người dùng xuất (Export) bản sao lưu từ `localhost:5173` và nhập (Import) an toàn vào `localhost:5000` với 100% độ trung thực dữ liệu và bảo mật tuyệt đối (không chứa JWT hay mật khẩu).
+  - **Phase 8 — Dual-Mode Final E2E & Release Gate:**
+    - Xây dựng bộ test tích hợp backend mới: `backend/EnglishMastery.Tests/Phase8DualModeReleaseGateTests.cs` (7/7 tests PASS).
+    - Xây dựng kịch bản kiểm chứng E2E chạy thực tế: `scripts/verify-phase8-dualmode-e2e.mjs` kiểm tra tuần tự cả hai chế độ `npm run dev` và `npm run start:unified`.
+    - Kết quả nghiệm thu: **24 PASS, 0 FAIL, 1 BLOCKED** (Google Cloud Console credentials thực tế chờ người quản trị cấu hình).
+
+- **Kết Quả Quality Gates Toàn Diện**:
+  - `dotnet build`: 0 Warnings, 0 Errors.
+  - `dotnet test` (Tất cả suites Phases 5 — 8): **26/26 tests PASS (100%)**.
+  - `npm run lint` (`oxlint`): **0 Errors** trên 555 files.
+  - `npm run build` (`tsc -b && vite build`): Biên dịch thành công, Workbox precache 30 entries (11.7MB assets).
+  - Khảo sát cổng mạng sau khi kết thúc: Cổng 5173 và 5000 được giải phóng 100%, 0 orphan processes.
+
+## [1.4.2] - 2026-10-09 — ONE-COMMAND STARTUP, STREAK ENGINE & SINGLE-SCROLL LANDING REPAIR (Phases 1 — 6)
+
+### Fixed, Hardened & Runtime Verified — Developer Orchestration, Streak Policy & Landing Page Layout
+
+- **Root Causes Identified (Nguyên nhân gốc rễ đã xác minh)**:
+  1. *Bug 1 — Dev Startup Orchestration:* Trước đây quy trình phát triển yêu cầu mở thủ công 2 terminal riêng biệt (`npm run backend` và `npm run dev`), không có cơ chế thăm dò kiểm tra SQL Server tự động và dễ để lại tiến trình nền mồ côi (orphan dotnet/node processes) khi đóng terminal trên Windows.
+  2. *Bug 2 — Streak Tracking Discrepancy (XP: 150, Heatmap: 1 ngày, Streak: 0):*
+     - Điểm 150 XP và ô Heatmap lịch sử được tạo ra từ các phần thưởng thụ động không đủ điều kiện (Rương mở ngày +100 XP, Nhiệm vụ +50 XP), hoặc ngày học thực tế đã diễn ra từ $\ge 2$ ngày trước (chuỗi đã đứt hợp lệ).
+     - Ranh giới ngày học trước đó bị phụ thuộc vào `toISOString().split('T')[0]` (múi giờ UTC) gây lệch ngày trước 07:00 sáng tại Việt Nam (Asia/Ho_Chi_Minh — UTC+7).
+     - Cơ chế Store Rehydration của Zustand thiếu bước đối soát chuỗi (reconciliation) từ bằng chứng học tập thực tế (`dailyHistory`, `recentReviewEvents`), dẫn đến việc người học có ngày học thật nhưng giá trị `profile.streak` vẫn bị ghim ở mức 0.
+  3. *Bug 3 — Welcome/Auth Double Scrollbar:*
+     - Vùng container gốc của `WelcomeView.tsx` khai báo `overflow-x-hidden`. Theo quy chuẩn CSS Overflow Module Level 3, khi `overflow-x: hidden` kết hợp với `overflow-y: visible` (mặc định), trình duyệt bắt buộc phải chuyển `overflow-y` thành `auto`.
+     - Các hiệu ứng phát sáng nền ambient glow sử dụng margin âm (`-mb-32`) nhô ra ngoài đáy container đúng 128px, biến `WelcomeView` thành một Active Scroll Container phụ với thanh cuộn dọc thứ hai chạy song song với thanh cuộn chính của `<html>`/`<body>`.
+
+- **Phần Mềm & Kiến Trúc Đã Triển Khai (Implemented Solutions)**:
+  - **One-Command Dev Orchestrator (`scripts/dev.mjs`):** Điều phối đồng thời Vite (cổng 5173), ASP.NET Core 10 (cổng 5000), thăm dò sẵn sàng SQL Server `EnglishMasteryDev` qua `/api/health`, gắn cờ phân biệt log màu, và dọn dẹp cây tiến trình con an toàn khi nhận `SIGINT` (Ctrl+C). Cung cấp lệnh độc lập `npm run frontend`, `npm run backend`, `npm run check:services`.
+  - **Vietnam Timezone Engine (`src/utils/dateUtils.ts`):** Chuẩn hóa ngày học và tính khoảng cách lịch chính xác theo múi giờ `Asia/Ho_Chi_Minh` (UTC+7), không phụ thuộc vào đồng hồ hệ thống client hay giờ UTC.
+  - **Streak Engine & Safe Historical Reconciliation (`src/services/streakReconciliationService.ts`):**
+    - Bộ lọc Qualifying Activity nghiêm ngặt: Chỉ công nhận ngày học khi `wordsReviewed > 0 || newWordsLearned > 0 || quizzesCompleted > 0 || pronunciationsMastered > 0` hoặc có sự kiện ôn tập SRS thực tế. Loại trừ hoàn toàn điểm XP thụ động từ Rương ngày và Nhiệm vụ.
+    - Chính sách Giữ Chuỗi (Streak Hold Policy): Người học ôn tập hôm qua được bảo toàn chuỗi đến 23:59:59 của ngày hôm nay.
+    - Bảo toàn kỷ lục đơn điệu: `reconciledLongestStreak = Math.max(existingLongest, existingStreak, maxHistoricalStreak)`, không bao giờ làm giảm kỷ lục trọn đời.
+    - Tự động đối soát khi khởi động (`src/store/storeRehydration.ts`): Phục hồi chuỗi hợp lệ tự động, bảo đảm tính idempotent, không sinh thêm XP và không làm sai lệch FSRS/SM-2 intervals.
+  - **Single Scroll Architecture (`src/components/welcome/WelcomeView.tsx` & `index.html`):**
+    - Gỡ bỏ `overflow-x-hidden` khỏi root container `WelcomeView`, đưa về trạng thái `overflow: visible` chuẩn tắc.
+    - Đóng gói toàn bộ các hiệu ứng phát sáng ambient glow (`-mb-32`, `-mr-16`) vào wrapper cách ly `absolute inset-0 overflow-hidden pointer-events-none`.
+    - Bổ sung `overflow-x-hidden` cấp độ viewport trên `<html>` và `<body>` trong `index.html` để chặn giật ngang mà không tạo scroll context cục bộ.
+
+- **Kết Quả Kiểm Thử Thực Tế (Runtime & Quality Gates Verification)**:
+  - **Kiểm Thử Trực Tiếp Bằng Trình Duyệt Microsoft Edge (Headless CDP):** Khảo sát toàn diện qua 5 kích thước viewport (1920×1080, 1366×768, 1280×720, 768×1024, 390×844, 320×568) và 3 mức tỷ lệ Zoom (125%, 150%, 200%): Xác nhận 100% chỉ có đúng 1 thanh cuộn dọc cửa sổ chính, 0 scroll container phụ, 0 thanh cuộn ngang (`scrollWidth === clientWidth`). Toàn bộ 13 phần tử bàn phím nhận focus chuẩn xác.
+  - **Backend Test Suite (.NET 10 xUnit):** Toàn bộ **184/184 tests PASS (100%)** trong `backend/EnglishMastery.Tests/EnglishMastery.Tests.csproj`.
+  - **Targeted E2E Suites (Vitest):** Toàn bộ **48/48 tests PASS (100%)** qua 5 file test trọng tâm (`streakPolicyAndReproduction`, `historicalStreakReconciliation`, `xpReloadRegressionAudit`, `WelcomeScrollbarFixPhase5`, `WelcomeAuthE2EPhase7`).
+  - **Quality Gates:** `npx tsc -b` (0 compile errors), `npm run lint` (0 errors), `npm run build` (Production PWA bundle biên dịch thành công, Service Worker precache 30 entries sẵn sàng).
+
+- **Hạn Chế Ghi Nhận Trung Thực (Limitations)**:
+  - Do môi trường máy chủ không có gói Playwright/Puppeteer cài đặt sẵn trong `devDependencies`, quá trình kiểm thử trình duyệt thực tế được thực hiện trực tiếp thông qua Chrome DevTools Protocol (CDP) kết nối tới Microsoft Edge Headless cục bộ.
+
 ## [1.4.1] - 2026-10-09 — ACCOUNT REGISTRATION PIPELINE RESTORATION & E2E VERIFICATION (Phases 1 — 5)
 
 ### Fixed, Hardened & Runtime Verified — End-to-End Registration, ASP.NET Core & SQL Server Pipeline

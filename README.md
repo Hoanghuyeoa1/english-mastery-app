@@ -559,27 +559,107 @@ Thực thi lệnh migration tạo cấu trúc bảng hoàn chỉnh:
 dotnet ef database update --project backend/EnglishMastery.Infrastructure --startup-project backend/EnglishMastery.Api
 ```
 
-#### 3. Khởi Động Backend API & SignalR Hub
-Khởi động backend bằng lệnh npm tiện ích (hoặc dotnet run trực tiếp):
-```powershell
-# Cách 1: Qua npm script
-npm run backend
+#### 3. Hai Chế Độ Vận Hành Chính Thức (Dual Hosting Modes)
 
-# Cách 2: Qua dotnet CLI
-dotnet run --project backend/EnglishMastery.Api/EnglishMastery.Api.csproj --launch-profile http
+Từ phiên bản 1.5.0, hệ thống chuẩn hóa hai chế độ vận hành chính tắc, đáp ứng cả nhu cầu phát triển tốc độ cao lẫn đóng gói triển khai thương mại:
+
 ```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ [DEV MODE]  npm run dev                                                                │
+│ ├─ Frontend: http://localhost:5173 (Vite HMR, Fast Refresh)                            │
+│ ├─ Backend:  http://localhost:5000 (ASP.NET Core Web API & SignalR /hubs/leaderboard)  │
+│ └─ CORS:     Whitelisted http://localhost:5173 và http://localhost:5000                │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ [UNIFIED]   npm run start:unified                                                      │
+│ ├─ Origin:   http://localhost:5000 (Toàn bộ SPA, REST API & SignalR trên cùng 1 cổng)  │
+│ ├─ Pipeline: Tự động biên dịch React Vite -> Sync vào backend/EnglishMastery.Api/wwwroot│
+│ ├─ Vite:     TẮT HOÀN TOÀN (Cổng 5173 không chạy)                                      │
+│ └─ CORS:     Không phát sinh (Same-Origin Native Calls)                                │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+##### 3.1. Chế Độ Phát Triển — DEV MODE (`npm run dev`)
+Thực thi lệnh tại thư mục gốc của repository:
+```powershell
+npm run dev
+```
+Trình điều phối `scripts/dev.mjs` thực hiện tuần tự:
+1. **Rà soát cổng mạng (Port Audit):** Kiểm tra cổng 5173 và cổng 5000. Nếu cổng bị chiếm bởi ứng dụng ngoài, ghi rõ PID và tiến trình chiếm giữ, dừng an toàn mà không tự ý kill tiến trình bên ngoài.
+2. **Khởi chạy ASP.NET Core 10:** Khởi động backend trên `http://localhost:5000` (hoặc tái sử dụng an toàn nếu instance đã sẵn sàng).
+3. **Thăm dò kết nối SQL Server (Bounded Health Polling):** Thăm dò `/api/health` định kỳ (tối đa 30s). Xác nhận cơ sở dữ liệu `EnglishMasteryDev` trên `localhost:1433` đã kết nối trước khi khởi động Frontend.
+4. **Khởi chạy Vite Frontend:** Khởi động máy chủ phát triển Vite trên `http://localhost:5173` với biến môi trường `VITE_API_BASE_URL=http://localhost:5000/api`.
+5. **Dọn dẹp sạch sẽ khi nhấn Ctrl+C (Zero-Orphan Process Guarantee):** Bắt tín hiệu `SIGINT` và sử dụng `taskkill /F /T /PID` trên Windows để dọn dẹp sạch sẽ toàn bộ cây tiến trình con (`dotnet.exe`, `conhost.exe`, `node.exe`), giải phóng ngay lập tức cả cổng 5173 và 5000.
+
+##### 3.2. Chế Độ Hợp Nhất — UNIFIED MODE (`npm run start:unified`)
+Thực thi lệnh tại thư mục gốc của repository:
+```powershell
+npm run start:unified
+```
+Trình điều phối `scripts/start-unified.mjs` thực hiện:
+1. **Rà soát cổng 5000:** Kiểm tra tính khả dụng của cổng 5000, từ chối khởi động nếu có xung đột cổng.
+2. **Biên dịch React Production Bundle:** Chạy Vite build sản sinh gói bundle tĩnh hoàn chỉnh vào thư mục `dist/` (nếu build thất bại, chặn đứng quy trình khởi động).
+3. **Đồng bộ tài nguyên tĩnh (Static Sync):** Xóa rác và sao chép toàn bộ nội dung từ `dist/` sang `backend/EnglishMastery.Api/wwwroot`.
+4. **Khởi động ASP.NET Core Unified Server:** Khởi chạy máy chủ trên cổng 5000 đảm nhiệm:
+   - Phục vụ React SPA tại `http://localhost:5000/` với `index.html` gắn cờ `no-cache`.
+   - Phục vụ tài nguyên băm trong `/assets/` với cờ `public, max-age=31536000, immutable`.
+   - Phục vụ Web Manifest tại `/manifest.webmanifest` với MIME `application/manifest+json`.
+   - Phục vụ Service Worker tại `/sw.js` với cờ `no-cache, no-store, must-revalidate`.
+   - Phục vụ REST API tại `http://localhost:5000/api`.
+   - Phục vụ Realtime Hub tại `http://localhost:5000/hubs/leaderboard`.
+   - Bảo vệ SPA Fallback: Các client route (`/dashboard`, `/leaderboard`, `/admin`, `/toeic`) trả về `index.html`. Trong khi các route lỗi `/api/*`, `/hubs/*`, `/health` trả về JSON 404, và static assets bị thiếu trả về 404, **tuyệt đối không bị SPA fallback nuốt lỗi**.
+5. **Dọn dẹp khi nhấn Ctrl+C:** Giải phóng cổng 5000 lập tức và hủy tiến trình backend con.
+
+> [!CAUTION]
+> **Quy Tắc Độc Quyền Cổng 5000:** Vì cả Dev Mode và Unified Mode đều sử dụng cổng backend 5000, **hai chế độ KHÔNG ĐƯỢC chạy đồng thời**. Hãy nhấn `Ctrl+C` để dừng hoàn toàn một chế độ trước khi chuyển sang chế độ còn lại.
+
+##### 3.3. Các Lệnh Thực Thi Độc Lập & Kiểm Tra Hệ Thống:
+- **Khởi chạy Frontend riêng lẻ:** `npm run frontend` (hoặc `npm run dev:frontend`).
+- **Khởi chạy Backend riêng lẻ:** `npm run backend` (hoặc `npm run dev:backend`).
+- **Kiểm tra nhanh kết nối trước khi khởi động:** `npm run check:services`.
+- **Kiểm tra tiêu chuẩn mã nguồn tĩnh:** `npm run lint` (`oxlint`).
+- **Biên dịch kiểm tra kiểu dữ liệu:** `npm run build` (`tsc -b && vite build`).
+- **Chạy bài kiểm tra tích hợp Backend:** `dotnet test backend/EnglishMastery.Tests/EnglishMastery.Tests.csproj --filter "Phase8DualModeReleaseGateTests"`.
+- **Chạy kịch bản kiểm chứng E2E Phase 8:** `node scripts/verify-phase8-dualmode-e2e.mjs`.
+
 - **API Endpoint:** `http://localhost:5000/api`
 - **SignalR Hub:** `http://localhost:5000/hubs/leaderboard`
 - **Health Check Endpoint:** `http://localhost:5000/api/health`
 - **Swagger UI:** `http://localhost:5000/swagger`
 
-> ⚠️ **LƯU Ý QUAN TRỌNG VỀ QUY TRÌNH PHÁT TRIỂN (DEVELOPMENT WORKFLOW):**  
-> - Lệnh `npm run dev` **CHỈ khởi chạy máy chủ Frontend (Vite trên cổng 5173)**.  
-> - Nếu chỉ chạy `npm run dev`, ứng dụng vẫn hoạt động bình thường ở chế độ **Cục Bộ (Local-First / Ngoại tuyến)**: tra từ điển, học thẻ SRS, làm bài Four Skills, luyện thi TOEIC hoàn toàn độc lập.  
-> - Để kích hoạt tính năng **Đăng ký / Đăng nhập tài khoản** và **Bảng xếp hạng trực tuyến Realtime**, bạn cần **mở 2 terminal song song**:  
->   - **Terminal 1:** `npm run backend` (Khởi chạy ASP.NET Core & SignalR Hub lắng nghe cổng 5000).  
->   - **Terminal 2:** `npm run dev` (Khởi chạy giao diện Vite lắng nghe cổng 5173).  
-> - Trước khi bắt đầu, bạn có thể kiểm tra trạng thái kết nối Backend & SQL Server bất kỳ lúc nào bằng lệnh: `npm run check:services`.
+##### 3.4. Cấu Hình Google Cloud Console (OAuth 2.0 Credentials Guide)
+Để tính năng Google Sign-In hoạt động trơn tru trong cả hai chế độ phát triển và thương mại, người quản trị cần đăng ký dự án trên [Google Cloud Console](https://console.cloud.google.com/) và cấu hình chính xác:
+
+1. **Authorized JavaScript Origins:**
+   - `http://localhost:5173` (Phục vụ Dev Mode)
+   - `http://localhost:5000` (Phục vụ Unified Mode)
+   - `http://127.0.0.1:5173`
+   - `http://127.0.0.1:5000`
+
+2. **Authorized Redirect URIs (Bắt buộc trỏ về Backend ASP.NET Core):**
+   - `http://localhost:5000/api/auth/google/callback`
+   - `http://127.0.0.1:5000/api/auth/google/callback`
+
+3. **Cập nhật thông tin vào cấu hình bí mật:**
+   Lưu `ClientId` và `ClientSecret` vào `appsettings.Development.json` (hoặc biến môi trường `Google__ClientId`, `Google__ClientSecret` / .NET Secret Manager):
+   ```json
+   "Google": {
+     "ClientId": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+     "ClientSecret": "YOUR_CLIENT_SECRET",
+     "RedirectUri": "http://localhost:5000/api/auth/google/callback"
+   }
+   ```
+   > [!NOTE]
+   > Khi chưa cấu hình Google Cloud credentials, hệ thống hoạt động bình thường qua Email/Password và hiển thị trạng thái `BLOCKED` an toàn cho Google Sign-In, không gây crash ứng dụng.
+
+##### 3.5. An Toàn Dữ Liệu Local-First & Di Chuyển Giữa Hai Origin (5173 vs 5000)
+> [!IMPORTANT]
+> Theo chính sách Same-Origin Policy của trình duyệt web, `http://localhost:5173` và `http://localhost:5000` là **hai origin lưu trữ hoàn toàn độc lập**. Dữ liệu `localStorage` và `IndexedDB` của học viên tạo trên cổng 5173 sẽ **không tự động xuất hiện** tại cổng 5000. Đây là cơ chế bảo mật tiêu chuẩn của trình duyệt, không phải lỗi mất dữ liệu.
+
+Để chuyển đổi tiến trình học tập Local-First từ Dev Mode (5173) sang Unified Mode (5000):
+1. **Xuất Bản Sao Lưu (Export):** Mở ứng dụng tại `http://localhost:5173`, vào mục **Cài đặt** -> chọn **Sao lưu & Khôi phục** -> nhấn **Tải bản sao lưu (Export)**. Tệp tin JSON được mã hóa an toàn, loại trừ toàn bộ JWT và mật khẩu.
+2. **Mở Ứng Dụng Unified:** Truy cập `http://localhost:5000`.
+3. **Nhập Bản Sao Lưu (Import):** Vào mục **Cài đặt** -> chọn **Sao lưu & Khôi phục** -> nhấn **Nhập bản sao lưu (Import)** và chọn tệp vừa tải về. Hộp thoại sao lưu đã được trang bị thông báo chỉ dẫn chi tiết hướng dẫn di chuyển giữa hai origin.
+4. **Xác Thực Tài Khoản:** Đăng nhập lại tài khoản trên `http://localhost:5000` để kết nối điểm số với Leaderboard trực tuyến.
 
 #### 4. Cấu Hình Môi Trường Frontend (.env)
 ```env
@@ -587,17 +667,26 @@ VITE_API_BASE_URL=http://localhost:5000/api
 ```
 *(Ghi chú: Toàn bộ cấu hình `VITE_SUPABASE_*` và `@supabase/supabase-js` đã được gỡ bỏ hoàn toàn)*.
 
-#### 5. Giới Hạn Cross-Device Sau Khi Loại Bỏ Personal Cloud Sync
-- **Bản Chất Local-First:** Tiến trình học tập chi tiết (danh sách từ đã thêm vào flashcard, lịch sử từng lần bấm rating SRS, bài tập nháp Four Skills, bài thi thử TOEIC đang làm dở) được lưu trữ 100% cục bộ trên trình duyệt/thiết bị của người học (`localStorage` và IndexedDB).
-- **Phân Định Trách Nhiệm Với Máy Chủ:** 
-  - Máy chủ ASP.NET Core & SQL Server **chỉ** lưu trữ thông tin xác thực tài khoản (Identity), hồ sơ (Profile), điểm số tổng hợp tuần phục vụ Bảng xếp hạng trực tuyến (`WeeklyLearningMetrics`), và các khung đại diện vinh danh (`UserFrameEntitlements`).
-  - Hệ thống **không** đồng bộ full-state bảng từ vựng cá nhân qua lại giữa nhiều thiết bị qua đám mây để tránh xung đột ghi đè và rò rỉ dữ liệu.
-- **Chuyển Đổi Tiến Trình Sang Thiết Bị Mới:** Người học có thể sử dụng tính năng **Xuất / Nhập Sao Lưu JSON** (trong mục Hồ Sơ / Cài Đặt) để chuyển toàn bộ dữ liệu học tập sang thiết bị hoặc trình duyệt khác một cách an toàn và chủ động.
+#### 5. Chính Sách Tính Chuỗi Streak & Ranh Giới Ngày Học (Streak & Daily Learning Policy)
+- **Bằng Chứng Học Tập Hợp Lệ (Qualifying Learning Activity):**
+  - Chỉ các hành động học tập thực tế mới đủ điều kiện ghi nhận ngày học: ôn tập thẻ nhớ (`wordsReviewed > 0`), học từ mới (`newWordsLearned > 0`), hoàn thành bài tập trắc nghiệm (`quizzesCompleted > 0`), hoặc vượt qua bài luyện phát âm (`pronunciationsMastered > 0`).
+  - **Phần thưởng thụ động KHÔNG tính Streak:** Mở Rương Ngày (Daily Chest +100 XP), điểm thưởng Nhiệm vụ (Daily Quests +50 XP), đăng nhập/đăng ký chỉ cộng điểm kinh nghiệm (XP) vào `profile.xp`, **tuyệt đối không ghi nhận Streak**.
+- **Ranh Giới Ngày Học Chuẩn Việt Nam (Asia/Ho_Chi_Minh — UTC+7):**
+  - Chuẩn hóa toàn bộ ngày học theo lịch GMT+7 (`YYYY-MM-DD`). Không dùng múi giờ UTC thuần túy gây lệch ngày trước 07:00 sáng.
+- **Chính Sách Giữ Chuỗi (Streak Hold Policy):**
+  - Nếu ngày học gần nhất là **Hôm qua**, Streak hiện tại vẫn được giữ nguyên đầy đủ cho tới 23:59:59 của ngày **Hôm nay** để người học kịp hoàn thành bài học.
+  - Chuỗi chỉ reset về 0 khi người học bỏ lỡ từ 2 ngày trở lên (ngày học gần nhất $\le$ Hôm kia).
+- **Phân Định Current Streak vs Longest Streak:**
+  - `Current Streak`: Chuỗi ngày học liên tục không đứt đoạn kết thúc vào hôm nay hoặc hôm qua.
+  - `Longest Streak`: Kỷ lục chuỗi ngày học cao nhất từ trước đến nay (Monotonic All-Time High). Không bao giờ giảm ngay cả khi chuỗi hiện tại bị đứt hoặc sau khi đối soát dữ liệu lịch sử.
+  - **Tự động đối soát dữ liệu lịch sử (Safe Historical Reconciliation):** Khi mở ứng dụng/reload, hệ thống tự động kiểm tra `dailyHistory` và `recentReviewEvents` để khôi phục chính xác chuỗi streak mà không sinh thêm XP hay nhân đôi dữ liệu.
 
-#### 6. Chính Sách Không Tự Động Sinh Dữ Liệu Demo (Zero Demo Seeding Policy)
-- Toàn bộ cơ chế tự sinh tài khoản demo (`Learner One`, `Learner Two`, `VIP Learner`) và điểm số/streak nhân tạo trong `Program.cs` và EF Core seeder đã bị vô hiệu hóa hoàn toàn.
-- Khi database rỗng (0 người dùng), Bảng xếp hạng hiển thị trạng thái rỗng trung thực ("Chưa có người học nào trong tuần này" và `totalCount = 0`), tuyệt đối không render array giả lập hay người dùng ảo.
-- Quá trình restart backend hay reload frontend không bao giờ tự động tái tạo dữ liệu giả vào SQL Server `EnglishMasteryDev`.
+#### 6. Kiến Trúc Cuộn Trang Welcome & Auth (Single Scroll Architecture)
+- **Loại Bỏ Hoàn Toàn Double Scrollbar:**
+  - Gỡ bỏ `overflow-x: hidden` tại vùng container gốc của `WelcomeView` (nguyên nhân kích hoạt quy chuẩn CSS tự động chuyển `overflow-y` thành `auto`).
+  - Gom toàn bộ hiệu ứng phát sáng nền (ambient glow) có kích thước vượt biên (`-mb-32`, `-mr-16`) vào các container đóng gói cách ly `absolute inset-0 overflow-hidden pointer-events-none`.
+  - Toàn bộ trang Landing Page chỉ duy trì **đúng 1 thanh cuộn dọc duy nhất** ở cấp độ cửa sổ trình duyệt (`<html>`/`<body>`).
+- **Responsive Hoàn Hảo:** Tương thích từ màn hình siêu nhỏ (320px mobile) đến màn hình lớn (1920px desktop), hỗ trợ các mức Zoom 125%, 150%, 200% mà không xuất hiện thanh cuộn ngang hay che khuất khu vực gửi form.
 
 #### 7. Quy Trình Xác Thực Tài Khoản & Cơ Chế Xử Lý Lỗi (Registration & Auth Error Handling)
 - **Hợp Đồng DTO Đăng Ký (`POST /api/auth/register`):**
@@ -610,7 +699,7 @@ VITE_API_BASE_URL=http://localhost:5000/api
   - Trong cùng một giao dịch EF Core, hệ thống đồng thời tạo bản ghi `AppUser`, gán vai trò mặc định `USER` trong `AspNetUserRoles`, khởi tạo `UserProfile` và `LeaderboardProfile`.
   - Không thể tự gán quyền `ADMIN` qua API đăng ký.
 - **Phân Loại Lỗi HTTP & Chẩn Đoán Môi Trường Phát Triển:**
-  - **Mất Kết Nối / Backend Chưa Chạy:** Khi backend cổng 5000 chưa khởi động (TCP Connection Refused / `TypeError: Failed to fetch`), Frontend hiển thị thông báo: *"Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng."* kèm gợi ý trong môi trường dev: `(Mẹo phát triển: Bạn đã chạy 'npm run backend' trên cổng 5000 chưa?)`.
+  - **Mất Kết Nối / Backend Chưa Chạy:** Khi backend cổng 5000 chưa khởi động (TCP Connection Refused / `TypeError: Failed to fetch`), Frontend hiển thị thông báo: *"Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng."* kèm gợi ý trong môi trường dev: `(Mẹo phát triển: Bạn đã chạy 'npm run dev' hoặc 'npm run backend' trên cổng 5000 chưa?)`.
   - **Hủy Yêu Cầu Do Người Dùng (Client Abort):** Khi đổi tab hoặc hủy thao tác (`AbortController`), request được phân loại là HTTP 499 (`CLIENT_CLOSED_REQUEST`) và giữ trạng thái form trung tính (`idle`), không phát sinh thông báo lỗi giả mạo.
   - **Lỗi Xác Thực (400 Validation):** Trích xuất danh sách lỗi chi tiết từ Identity hoặc ModelState (mật khẩu yếu, email không đúng định dạng, tên quá dài).
   - **Lỗi Máy Chủ (500 Server Error):** Trả về thông báo lỗi hệ thống thân thiện bằng tiếng Việt, không làm lộ stack trace hay cấu trúc nội bộ.

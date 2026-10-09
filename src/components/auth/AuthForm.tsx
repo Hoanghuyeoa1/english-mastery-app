@@ -131,7 +131,7 @@ export function AuthForm({
     const exchangeCode = searchParams.get('oauth_exchange_code');
     const oauthError = searchParams.get('oauth_error');
     const oauthEmail = searchParams.get('email');
-    const errorMsg = searchParams.get('message');
+    const errorMsg = searchParams.get('message') || searchParams.get('oauth_error_description');
 
     if (exchangeCode) {
       const cleanUrl = window.location.pathname + window.location.hash;

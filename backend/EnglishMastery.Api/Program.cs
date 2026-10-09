@@ -8,6 +8,7 @@ using EnglishMastery.Infrastructure;
 using EnglishMastery.Infrastructure.Auth;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -104,7 +105,8 @@ if (!string.IsNullOrWhiteSpace(jwtSecretKey))
                     var error = new EnglishMastery.Application.Common.ErrorResponse(
                         "UNAUTHORIZED",
                         "Yêu cầu xác thực tài khoản hợp lệ để tiếp tục.");
-                    await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(error));
+                    var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+                    await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(error, jsonOptions));
                 }
             },
             OnForbidden = async context =>
@@ -116,7 +118,8 @@ if (!string.IsNullOrWhiteSpace(jwtSecretKey))
                     var error = new EnglishMastery.Application.Common.ErrorResponse(
                         "FORBIDDEN",
                         "Tài khoản của bạn không có đủ quyền hạn để thực hiện thao tác này.");
-                    await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(error));
+                    var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+                    await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(error, jsonOptions));
                 }
             }
         };
@@ -137,6 +140,19 @@ builder.Services.AddAuthorization(options =>
         policy.AddRequirements(new AdminRoleRequirement()));
 });
 
+// Configure WebRootPath: Check if wwwroot exists in Api project, or fallback to dist at repo root
+var wwwrootCandidate = Path.Combine(builder.Environment.ContentRootPath, "wwwroot");
+var repoDistCandidate = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", "..", "dist"));
+
+if (Directory.Exists(wwwrootCandidate))
+{
+    builder.Environment.WebRootPath = wwwrootCandidate;
+}
+else if (Directory.Exists(repoDistCandidate))
+{
+    builder.Environment.WebRootPath = repoDistCandidate;
+}
+
 var app = builder.Build();
 
 // CLI Subcommand Routing: Server-side administrative tooling
@@ -152,12 +168,82 @@ app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
 // 7. Security and Transport Middleware
 app.UseCors("FrontendDevCorsPolicy");
+
+// 7.1. Static Files Middleware (Serve React Production Build)
+var contentTypeProvider = new FileExtensionContentTypeProvider();
+contentTypeProvider.Mappings[".webmanifest"] = "application/manifest+json";
+
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypeProvider,
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.Context.Request.Path.Value ?? "";
+        if (path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        }
+        else if (path.Equals("/sw.js", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/index.html", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/manifest.webmanifest", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/manifest.json", StringComparison.OrdinalIgnoreCase) ||
+                 path.Equals("/", StringComparison.Ordinal))
+        {
+            ctx.Context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        }
+    }
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 // 8. Route Mapping
 app.MapControllers();
 app.MapHub<LeaderboardHub>("/hubs/leaderboard");
+
+// 8.1. SPA Fallback Routing (Single Origin Hosting)
+// Strictly guards /api, /hubs, /health, and missing static files from returning index.html
+app.MapFallback(async context =>
+{
+    var path = context.Request.Path.Value ?? "";
+
+    // 1. API, SignalR, or Health routes -> Return 404 JSON (never HTML)
+    if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+        path.StartsWith("/hubs", StringComparison.OrdinalIgnoreCase) ||
+        path.Equals("/health", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        context.Response.ContentType = "application/json";
+        var error = new EnglishMastery.Application.Common.ErrorResponse(
+            "NOT_FOUND",
+            $"Endpoint '{path}' không tồn tại trên hệ thống.");
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase };
+        await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(error, jsonOptions));
+        return;
+    }
+
+    // 2. Missing static assets (files with extensions or under /assets/) -> Return 404 (never HTML)
+    if (Path.HasExtension(path) || path.StartsWith("/assets/", StringComparison.OrdinalIgnoreCase))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    // 3. Client SPA Routes (e.g. /, /welcome, /dashboard, /leaderboard) -> Serve index.html
+    var env = context.RequestServices.GetRequiredService<IWebHostEnvironment>();
+    var indexPath = Path.Combine(env.WebRootPath ?? "", "index.html");
+    if (File.Exists(indexPath))
+    {
+        context.Response.ContentType = "text/html; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
+        await context.Response.SendFileAsync(indexPath);
+    }
+    else
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+    }
+});
 
 // 9. Startup Diagnostic Logging: Verify SQL Server Connectivity
 try

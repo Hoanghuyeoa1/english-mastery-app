@@ -115,7 +115,7 @@ export function App() {
       const code = searchParams.get('oauth_exchange_code');
       const oauthErr = searchParams.get('oauth_error');
       const oauthEmail = searchParams.get('email');
-      const errorMsg = searchParams.get('message');
+      const errorMsg = searchParams.get('message') || searchParams.get('oauth_error_description');
 
       if (code) {
         window.opener.postMessage({ type: 'GOOGLE_AUTH_EXCHANGE', code }, window.location.origin);

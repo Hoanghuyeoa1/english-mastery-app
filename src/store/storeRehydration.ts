@@ -22,6 +22,7 @@ import {
 } from './fourSkillsSanitizers';
 import { composeVocabularyList } from './vocabularyComposer';
 import { getVietnamDateString } from '../utils/dateUtils';
+import { reconcileHistoricalStreak } from '../services/streakReconciliationService';
 
 export function partializeAppStore(state: AppStoreState) {
   return {
@@ -312,6 +313,22 @@ export function handleStoreRehydration(
       };
     }
     state.dailyHistory = cleaned;
+  }
+
+  // Phase 4: Phục hồi và chỉnh lý an toàn chuỗi Streak lịch sử (Historical Streak Reconciliation)
+  if (state.profile) {
+    const reconciliation = reconcileHistoricalStreak({
+      profile: state.profile,
+      dailyHistory: state.dailyHistory,
+      recentReviewEvents: state.recentReviewEvents,
+    });
+    if (reconciliation.modified) {
+      state.profile.streak = reconciliation.reconciledStreak;
+      state.profile.longestStreak = reconciliation.reconciledLongestStreak;
+      if (reconciliation.reconciledLastStudyDate) {
+        state.profile.lastStudyDate = reconciliation.reconciledLastStudyDate;
+      }
+    }
   }
 
   // Đảm bảo mọi từ đã có trong srsProgressMap đều có firstLearnedAt lịch sử

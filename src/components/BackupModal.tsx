@@ -187,6 +187,20 @@ export const BackupModal: React.FC<BackupModalProps> = ({ isOpen, onClose }) => 
           Toàn bộ tiến độ học của <strong>{profile.name || 'bạn'}</strong> (từ vựng, XP, Daily Streak, lịch sử ôn tập SRS) được lưu trữ trực tiếp trong trình duyệt. Hãy sao lưu định kỳ để tránh mất mát khi dọn dẹp bộ nhớ cache.
         </p>
 
+        {/* Migration guidance between Dev (5173) and Unified (5000) */}
+        <div className="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300 space-y-1.5">
+          <div className="font-bold flex items-center gap-1.5 text-cyan-200">
+            <span>💡 Chuyển tiến độ giữa Dev (5173) và Unified (5000)</span>
+          </div>
+          <p className="text-slate-300 leading-relaxed">
+            Do cơ chế bảo mật Same-Origin Policy của trình duyệt, dữ liệu lưu cục bộ tại cổng <strong>5173</strong> không tự động chia sẻ sang cổng <strong>5000</strong>. Để chuyển dữ liệu an toàn:
+          </p>
+          <ol className="list-decimal list-inside text-slate-300 space-y-0.5 pl-1">
+            <li>Mở ứng dụng tại <strong>localhost:5173</strong> và bấm <strong>Tải về</strong> bản sao lưu JSON.</li>
+            <li>Mở ứng dụng tại <strong>localhost:5000</strong> và bấm <strong>Chọn file</strong> để nạp lại tiến độ.</li>
+          </ol>
+        </div>
+
         {/* Status alert message */}
         {statusMsg && (
           <div className={`p-4 rounded-2xl text-xs sm:text-sm font-semibold flex items-center gap-2 ${

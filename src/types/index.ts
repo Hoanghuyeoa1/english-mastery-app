@@ -739,6 +739,7 @@ export interface AppStore {
   consumeHeart: () => boolean;
   refillHearts: () => void;
   checkAndUpdateStreak: () => void;
+  reconcileStreakFromHistory: () => any;
   checkDailyReset: () => void;
   setDailyNewWordsLimit: (limit: number) => void;
   addExtraNewWords: (count: number) => void;
